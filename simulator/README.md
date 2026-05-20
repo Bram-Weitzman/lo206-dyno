@@ -9,9 +9,10 @@ control program can connect to it exactly as it will connect to real hardware.
 
 | File                 | Role                                               |
 |----------------------|----------------------------------------------------|
-| `engine_sim.py`      | I/O-agnostic engine + brake physics model          |
-| `torque_curve.py`    | LO206 Black Slide torque lookup + interpolation     |
-| `modbus_server.py`   | Modbus TCP server mapping the model to registers   |
+| `modbus_map.py`      | Register contract as named constants (single source of truth) |
+| `torque_curve.py`    | LO206 Black Slide (.520) torque lookup + interpolation |
+| `engine_sim.py`      | I/O-agnostic engine + hydraulic-brake physics model |
+| `modbus_server.py`   | pymodbus async TCP server mapping the model to registers |
 | `tests/`             | pytest suite                                       |
 
 ## Setup
@@ -35,19 +36,40 @@ source /opt/dyno-venv/bin/activate
 python modbus_server.py
 ```
 
-The server listens on `0.0.0.0:502` (standard Modbus TCP). Point the OpenPLC
-Modbus master at the VM's IP, port 502.
+The server listens on `0.0.0.0:502` (standard Modbus TCP). **Port note:** binding
+502 needs root or `CAP_NET_BIND_SERVICE`; an unprivileged process automatically
+falls back to **5020** and logs the change. Point the OpenPLC Modbus master at
+the VM's IP on whichever port the startup log reports. A 10 ms physics loop runs
+alongside the server; a heartbeat line prints every 5 s.
+
+## Register contract
+
+`modbus_map.py` mirrors `../plc/register_map.md`:
+
+- **Input registers (30001-30007):** sensors the sim writes (RPM, torque x10,
+  PSI, CHT, valve-actual x100, AFR x10, status).
+- **Holding registers (40001-40004):** commands the PLC writes (valve-cmd x100,
+  target RPM, control mode, safety-enable).
 
 ## Test
 
 ```bash
 source /opt/dyno-venv/bin/activate
 cd simulator
-pytest
+pytest -v
 ```
 
 ## Status
 
-`torque_curve.py` is functional. `engine_sim.py` and `modbus_server.py` are
-stubs with a TODO backlog at the top of each file — physics integration and the
-pymodbus server are the next implementation steps.
+Implemented and smoke-tested end to end over Modbus TCP:
+
+- `torque_curve.py` — Black Slide (.520) data + numpy interpolation, with
+  zero-below-2000 / hold-above-6100 clamps.
+- `engine_sim.py` — engine inertia (J=0.05 kg.m^2), hydraulic pump load
+  (gain 12 ft-lbs), first-order valve lag (tau=120 ms), CHT thermal model, and
+  overpressure/overtemp safety trips. Physics placeholders are flagged
+  `# TODO: calibrate against real hardware`.
+- `modbus_server.py` — pymodbus 3.13 async server sharing a live datastore with
+  the physics loop.
+
+Next: PID tuning happens on the PLC side (see `../plc/`), against this sim.

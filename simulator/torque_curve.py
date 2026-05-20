@@ -2,50 +2,59 @@
 
 Source
 ------
-The torque values below are digitized from official Briggs & Stratton dyno
-sheets for the LO206 in the **Black Slide (.440 opening)** configuration, the
-standard senior-class restriction. Torque is in ft-lbs at the crank.
+Torque values digitized from official Briggs & Stratton dyno sheets for the
+LO206 in the **Black Slide (.520 opening)** configuration — the unrestricted
+club/senior setup. Torque is in ft-lbs at the crank. This curve peaks near
+9.8 ft-lbs around 3500 RPM, consistent with the project's ~10 ft-lbs / 8.8 HP
+hardware target (see README).
 
-The Black Slide is one of several slide/restrictor configurations used across
-LO206 racing classes (Purple, Red, Green, Blue, Yellow, and Stock are the
-others). Those alternate configurations are documented in ``docs/bom.md`` and
-can be swapped in here by replacing the lookup table.
+Other slide/restrictor configurations (Purple, Red, Green, Blue, Yellow, Stock,
+and the older .440 Black Slide) are documented in ``docs/bom.md`` and can be
+swapped in by replacing the lookup table below.
 
 NOTE: Replace this curve with measured data once the real dyno is built. The
 simulator uses this same table, so improving the data here improves both the
-sim and (eventually) the baseline we compare real runs against.
+sim and the baseline we compare real runs against.
+
+This module is the single home of the torque lookup (engine_sim.py imports
+``interpolate_torque`` from here rather than duplicating the table).
 """
 
 import numpy as np
 
-# Black Slide (.440 opening) — (rpm, torque_ftlbs) from B&S dyno sheets.
-BLACK_SLIDE_CURVE = [
-    (2500, 4.73),
-    (3000, 5.31),
-    (3500, 5.96),
-    (4000, 5.82),
-    (4500, 5.40),
-    (5000, 4.97),
-    (5500, 4.54),
-    (6000, 4.14),
-]
+# Black Slide (.520 opening) — parallel lists (rpm, torque_ftlbs) from B&S sheets.
+TORQUE_CURVE_RPM = [2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000]
+TORQUE_CURVE_FT_LBS = [9.06, 9.39, 9.83, 9.18, 7.38, 6.62, 5.37, 4.96]
 
-# Active curve. Swap this out to model a different slide configuration.
-ACTIVE_CURVE = BLACK_SLIDE_CURVE
+# Convenience zipped view of the active curve.
+ACTIVE_CURVE = list(zip(TORQUE_CURVE_RPM, TORQUE_CURVE_FT_LBS))
 
-_RPM_POINTS = np.array([p[0] for p in ACTIVE_CURVE], dtype=float)
-_TORQUE_POINTS = np.array([p[1] for p in ACTIVE_CURVE], dtype=float)
+# Clamp behaviour outside the tabulated range:
+#   below this RPM the engine makes no usable torque (treated as stalled / sub-idle)
+RPM_TORQUE_ZERO_BELOW = 2000.0
+#   above this RPM (rev-limiter region) hold the last tabulated value; the sim
+#   should never operate here in normal control.
+RPM_TORQUE_CLAMP_ABOVE = 6100.0
+
+_RPM_POINTS = np.array(TORQUE_CURVE_RPM, dtype=float)
+_TORQUE_POINTS = np.array(TORQUE_CURVE_FT_LBS, dtype=float)
 
 
 def interpolate_torque(rpm: float) -> float:
-    """Return interpolated torque (ft-lbs) at the given engine ``rpm``.
+    """Return interpolated engine torque (ft-lbs) at the given ``rpm``.
 
-    Linear interpolation across the published points. Below the lowest point or
-    above the highest point, ``numpy.interp`` clamps to the endpoint value.
+    - Below ``RPM_TORQUE_ZERO_BELOW`` (2000): returns 0.0 (engine sub-idle/stalled).
+    - Above ``RPM_TORQUE_CLAMP_ABOVE`` (6100): clamps to the last tabulated value.
+    - In between: linear interpolation (numpy.interp), which clamps to the first
+      tabulated value (2500 RPM) for the 2000-2500 gap.
     """
+    if rpm < RPM_TORQUE_ZERO_BELOW:
+        return 0.0
+    if rpm > RPM_TORQUE_CLAMP_ABOVE:
+        return float(_TORQUE_POINTS[-1])
     return float(np.interp(rpm, _RPM_POINTS, _TORQUE_POINTS))
 
 
 if __name__ == "__main__":
-    for test_rpm in (2000, 2500, 3250, 4000, 5750, 6000, 6500):
+    for test_rpm in (1500, 2000, 2500, 3500, 4250, 5500, 6000, 6500):
         print(f"{test_rpm:5d} rpm -> {interpolate_torque(test_rpm):.2f} ft-lbs")

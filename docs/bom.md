@@ -3,12 +3,29 @@
 ## LO206 slide configurations
 
 The LO206 uses interchangeable carburetor slides/restrictors (referred to by
-color) to set the power level for different racing classes. The simulator's
-torque curve (`simulator/torque_curve.py`) currently models the **Black Slide
-(.440 opening)**, the standard senior configuration, using digitized B&S dyno
-sheet data.
+color and opening size) to set the power level for different racing classes. The
+simulator's torque curve (`simulator/torque_curve.py`) currently models the
+**Black Slide (.520 opening)** — the unrestricted club/senior setup — using
+digitized B&S dyno sheet data. This curve peaks near 9.8 ft-lbs around 3500 RPM,
+consistent with the project's ~10 ft-lbs / 8.8 HP hardware target.
 
-### Black Slide (.440 opening) — digitized, in use by the sim
+### Black Slide (.520 opening) — digitized, in use by the sim
+
+| RPM  | Torque (ft-lbs) |
+|------|-----------------|
+| 2500 | 9.06            |
+| 3000 | 9.39            |
+| 3500 | 9.83            |
+| 4000 | 9.18            |
+| 4500 | 7.38            |
+| 5000 | 6.62            |
+| 5500 | 5.37            |
+| 6000 | 4.96            |
+
+### Black Slide (.440 opening) — alternate (restricted senior), not in use
+
+Retained for reference; this was the originally-scaffolded curve. Swap it back
+into `torque_curve.py` to model the .440 restriction.
 
 | RPM  | Torque (ft-lbs) |
 |------|-----------------|
