@@ -41,12 +41,15 @@ def test_zero_below_2000():
     assert interpolate_torque(2000) == TORQUE_CURVE_FT_LBS[0]
 
 
-def test_clamp_above_6100():
-    """Above RPM_TORQUE_CLAMP_ABOVE, hold the last tabulated value."""
+def test_zero_at_and_above_6100():
+    """At or above RPM_TORQUE_CLAMP_ABOVE the spark cut has fired — torque is 0."""
     assert RPM_TORQUE_CLAMP_ABOVE == 6100.0
-    last = TORQUE_CURVE_FT_LBS[-1]
-    assert interpolate_torque(6500) == last
-    assert interpolate_torque(9000) == last
+    assert interpolate_torque(6100) == 0.0
+    assert interpolate_torque(6200) == 0.0  # draft/push overshoot scenario
+    assert interpolate_torque(6500) == 0.0
+    assert interpolate_torque(9000) == 0.0
+    # Just below the limiter we still interpolate from the table (6000 = 4.96).
+    assert interpolate_torque(6099.9) == TORQUE_CURVE_FT_LBS[-1]
 
 
 def test_peak_torque_region():
