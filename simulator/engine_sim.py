@@ -27,10 +27,13 @@ Physics parameters that need real measurement are flagged
 placeholder value.
 """
 
+import logging
 import math
 
 from torque_curve import interpolate_torque
 import modbus_map as mb
+
+_log = logging.getLogger(__name__)
 
 # --- Integration ---
 DT_DEFAULT = 0.010                 # s, 10 ms physics step (matches server loop)
@@ -67,6 +70,19 @@ RPM_MAX = 6100.0                   # nominal governed max; pump-load normalisati
 # TODO: calibrate against real hardware (true idle speed).
 IDLE_RPM = 2500.0
 
+# --- Rev limiter ---
+# Rev limiter model -- calibrated from AiM MyChron5 on-track data (MRFKC,
+# 2026-04-24). Real behavior: spark cut at ~6000-6100 RPM, drops ~700-850 RPM
+# in <=50ms, recovers in ~100-150ms, repeats at ~5-10 Hz. Operating band:
+# ~5200-6100 RPM. Model uses instantaneous torque cut consistent with measured
+# data; the inertia integration alone produces the RPM drop -- do NOT subtract
+# RPM manually.
+RPM_LIMITER = 6100.0               # spark cut threshold
+RPM_LIMITER_MAX = 6200.0           # hard ceiling for draft/push overshoot scenario
+                                   # (real-world observed max: 6162 RPM, AiM 2026-04-24)
+RPM_LIMITER_HYSTERESIS = 100.0     # release torque below RPM_LIMITER - this band
+                                   # to prevent the limiter from toggling every tick
+
 # --- Unit conversions ---
 FT_LB_TO_NM = 1.355818
 RAD_PER_SEC_TO_RPM = 60.0 / (2.0 * math.pi)
@@ -102,6 +118,9 @@ class DynoEngine:
         self._fault = False            # latched
         self._overpressure = False
         self._overtemp = False
+        # rev limiter
+        self._limiter_active = False         # True while spark cut is suppressing torque
+        self._rpm_capped_at_max = False      # edge tracker so we warn once per hit
 
     # ------------------------------------------------------------------ inputs
     def set_valve_position(self, percent: float) -> None:
@@ -122,9 +141,23 @@ class DynoEngine:
         self._target_rpm = float(rpm)
 
     # ----------------------------------------------------------------- physics
+    def _update_limiter(self) -> None:
+        """Latch/release the rev limiter from current RPM with hysteresis.
+
+        Pure state update; called from :meth:`tick` before torque is computed so
+        :meth:`engine_torque` can stay a side-effect-free reader.
+        """
+        if self._rpm >= RPM_LIMITER:
+            self._limiter_active = True
+        elif self._rpm < RPM_LIMITER - RPM_LIMITER_HYSTERESIS:
+            self._limiter_active = False
+
     def engine_torque(self) -> float:
-        """Driving torque (ft-lbs). Zero unless the engine is enabled (running)."""
+        """Driving torque (ft-lbs). Zero when stopped or when the spark cut is
+        active (limiter latched). Otherwise looked up on the published curve."""
         if not self._engine_enable:
+            return 0.0
+        if self._limiter_active:
             return 0.0
         return interpolate_torque(self._rpm)
 
@@ -147,7 +180,9 @@ class DynoEngine:
         self._valve_act += (target_valve - self._valve_act) * (dt / TAU_VALVE)
         self._valve_act = _clamp(self._valve_act, 0.0, 100.0)
 
-        # 2. Torques.
+        # 2. Torques. Update the rev limiter latch first so engine_torque() sees
+        #    the correct state this tick.
+        self._update_limiter()
         eng_tq = self.engine_torque()
         self._pump_load = self._compute_pump_load()
         net_torque_ftlbs = eng_tq - self._pump_load
@@ -158,6 +193,21 @@ class DynoEngine:
         self._rpm += angular_accel * dt * RAD_PER_SEC_TO_RPM
         if self._rpm < 0.0:
             self._rpm = 0.0
+
+        # 3b. Hard RPM ceiling: physics should keep us below this, but if any
+        #     pathological combination of torque/load/dt produces overshoot,
+        #     clamp at RPM_LIMITER_MAX so the rest of the model stays bounded.
+        #     Warn on the rising edge only -- do not spam every tick.
+        if self._rpm > RPM_LIMITER_MAX:
+            if not self._rpm_capped_at_max:
+                _log.warning(
+                    "RPM hard ceiling hit: clamping %.1f to %.1f (RPM_LIMITER_MAX)",
+                    self._rpm, RPM_LIMITER_MAX,
+                )
+                self._rpm_capped_at_max = True
+            self._rpm = RPM_LIMITER_MAX
+        else:
+            self._rpm_capped_at_max = False
 
         # 4. Hydraulic pressure from brake torque.
         self._pressure_psi = (self._pump_load / MAX_PUMP_TORQUE) * MAX_PRESSURE_PSI
@@ -228,6 +278,11 @@ class DynoEngine:
     def valve_cmd(self) -> float:
         return self._valve_cmd
 
+    @property
+    def limiter_active(self) -> bool:
+        """True while the rev limiter has cut spark (RPM in the limiter band)."""
+        return self._limiter_active
+
 
 # OBSERVED VALUES (smoke test, Black Slide .520, 50% valve, J=0.05, gain=12.0):
 #   - Standalone settling (4 s @ 50% valve): rpm ~5392, torque ~5.64 ft-lbs,
@@ -249,4 +304,4 @@ if __name__ == "__main__":
           f"torque={eng.get_torque():.2f} ft-lbs "
           f"valve_act={eng.get_valve_actual():.1f}% "
           f"psi={eng.get_hydraulic_psi():.1f} cht={eng.get_head_temp_c():.1f} "
-          f"status={eng.get_status()}")
+          f"status={eng.get_status()} limiter={eng.limiter_active}")

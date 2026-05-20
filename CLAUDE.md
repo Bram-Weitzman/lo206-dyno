@@ -83,6 +83,6 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-Last worked on: 2026-05-20 — Task 2/6: torque_curve.py clamped to 0.0 at >= 6100 RPM.
-Immediate next step: Task 3/6 — implement rev limiter in engine_sim.py.
+Last worked on: 2026-05-20 — Task 3/6: rev limiter model added to engine_sim.py.
+Immediate next step: Task 4/6 — expose LIMITER_ACTIVE on Modbus register map.
 Blocking questions: None.
