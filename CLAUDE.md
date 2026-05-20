@@ -80,3 +80,25 @@ must be changed *first*, deliberately, before either side.
 
 Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 **Confirm/replace** these if a different identity should own the commits.
+
+## Current session state
+
+Last worked on: 2026-05-20. Initial scaffolding of this section. Most recent
+engineering work was the first end-to-end verification of the closed-loop
+step response (commit `28a4702`): `dyno_control.st` running under OpenPLC v3
+held 5000 RPM against `simulator/modbus_server.py` with committed gains
+(`Kp=0.3, Ki=0.05, Kd=0.01`, `T#50ms`). Rise time ~1.4 s, overshoot ~4 %,
+settled within ±1 % by ~14 s, with visible steady-state hunting. Wiring
+fixes (`AT %IW100..106` / `AT %QW100..103` clauses and a
+`CONFIGURATION / RESOURCE / TASK` block) landed in the same commit; details
+in `plc/README.md` under "Verified Step Response (sim)".
+
+Immediate next step: PID tuning pass against the sim. Drop `Kp` to ~0.15–0.2
+and rerun the 0 → 5000 RPM step against a freshly restarted sim; goal is to
+collapse the steady-state hunting (currently ~62–70 % valve cycling) without
+losing the ~1 s rise time. Re-tune `Ki` only if steady-state error widens
+past ~25 RPM. Document before/after numbers in the README per the standing
+rule that gain changes require evidence.
+
+Blocking questions: None outstanding from this session. Architectural and
+hardware questions still live in the "Known open questions" section above.
