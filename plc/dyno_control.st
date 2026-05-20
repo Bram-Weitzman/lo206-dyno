@@ -101,19 +101,19 @@ END_VAR
    -------------------------------------------------------------------- *)
 VAR
     (* Inputs read from the sim/hardware (raw register counts) *)
-    iEngineRpmRaw    : INT := 0;   (* 30001 RPM, 1:1 *)
-    iTorqueRaw       : INT := 0;   (* 30002 ft-lbs x10 (logging only) *)
-    iHydraulicPsiRaw : INT := 0;   (* 30003 PSI, 1:1 *)
-    iHeadTempRaw     : INT := 0;   (* 30004 degC, 1:1 *)
-    iValveActRaw     : INT := 0;   (* 30005 % x100 (actual, post-lag) *)
-    iAfrRaw          : INT := 0;   (* 30006 AFR x10 (reserved, unused) *)
-    iSimStatus       : INT := 0;   (* 30007 0 stop/1 run/2 fault *)
+    iEngineRpmRaw    AT %IW100 : INT;   (* 30001 RPM, 1:1 *)
+    iTorqueRaw       AT %IW101 : INT;   (* 30002 ft-lbs x10 (logging only) *)
+    iHydraulicPsiRaw AT %IW102 : INT;   (* 30003 PSI, 1:1 *)
+    iHeadTempRaw     AT %IW103 : INT;   (* 30004 degC, 1:1 *)
+    iValveActRaw     AT %IW104 : INT;   (* 30005 % x100 (actual, post-lag) *)
+    iAfrRaw          AT %IW105 : INT;   (* 30006 AFR x10 (reserved, unused) *)
+    iSimStatus       AT %IW106 : INT;   (* 30007 0 stop/1 run/2 fault *)
 
     (* Commands. Operator-set ones arrive via HMI; PLC publishes to holding regs. *)
-    iValveCmdRaw     : INT := 0;   (* 40001 % x100 -> the actuator output *)
-    iTargetRpmRaw    : INT := 0;   (* 40002 RPM, 1:1 (operator setpoint) *)
-    iControlMode     : INT := 0;   (* 40003 mode (operator) *)
-    iSafetyEnable    : INT := 0;   (* 40004 run/stop (operator; PLC may force 0) *)
+    iValveCmdRaw     AT %QW100 : INT;   (* 40001 % x100 -> the actuator output *)
+    iTargetRpmRaw    AT %QW101 : INT;   (* 40002 RPM, 1:1 (operator setpoint) *)
+    iControlMode     AT %QW102 : INT;   (* 40003 mode (operator) *)
+    iSafetyEnable    AT %QW103 : INT;   (* 40004 run/stop (operator; PLC may force 0) *)
 END_VAR
 
 (* --------------------------------------------------------------------
@@ -296,3 +296,18 @@ END_IF;
 bPidActivePrev := bPidActive;
 
 END_PROGRAM
+
+(* --------------------------------------------------------------------
+   OPENPLC RESOURCE BINDING
+   --------------------------------------------------------------------
+   Required by the OpenPLC v3 build script (which moves Config0.c / Res0.c
+   into place after iec2c). The task interval here MUST equal DT_S above —
+   the integral and derivative use DT_S as dt; if they disagree the
+   effective Ki / Kd are wrong.
+*)
+CONFIGURATION Config0
+    RESOURCE Res0 ON PLC
+        TASK Main(INTERVAL := T#50ms, PRIORITY := 0);
+        PROGRAM Inst0 WITH Main : dyno_control;
+    END_RESOURCE
+END_CONFIGURATION

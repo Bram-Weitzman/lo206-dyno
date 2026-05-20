@@ -134,3 +134,85 @@ The Structured Text safety interlock (software e-stop, overspeed, over-pressure,
 over-temp) is the *first* block evaluated each scan and forces the valve closed.
 On real hardware this software interlock does **not** replace a hardwired
 physical e-stop — that is a separate, non-negotiable circuit.
+
+## Verified Step Response (sim) — 2026-05-20
+
+First end-to-end run of `dyno_control.st` against `simulator/modbus_server.py`.
+PLC and sim both on `dyno-dev`; OpenPLC v3 runtime; Modbus TCP master on
+port 5020. The closed loop **does hold target RPM** with the committed gains,
+with caveats noted below.
+
+### Setup
+
+- Simulator: fresh start (no residual engine state).
+- OpenPLC Slave Device: TCP, `127.0.0.1:5020`, slave id `1`, polling `50 ms`.
+  Input registers `ai_start=0 ai_size=7` → `%IW100..106`.
+  Holding registers `aow_start=0 aow_size=4` → `%QW100..103` (write-only;
+  PLC owns them).
+- Task cycle: `T#50ms` (matches `DT_S = 0.05` in the program).
+- Operator commands written to OpenPLC's own Modbus server on port 502
+  (which exposes `%QW101..103`): `TARGET_RPM = 5000`, `CONTROL_MODE = 1`,
+  `SAFETY_ENABLE = 1`.
+- Gains as committed: `Kp = 0.3`, `Ki = 0.05`, `Kd = 0.01`.
+
+### Observed step response (setpoint 0 → 5000 RPM)
+
+| Metric                                    | Value         |
+|-------------------------------------------|---------------|
+| Rise time (0 → 5000 RPM, first crossing)  | ~1.4 s        |
+| Peak overshoot                            | 5197 RPM (~4%)|
+| Settling time (within ±1 % = ±50 RPM)     | ~14 s         |
+| Steady-state RPM                          | 5015–5030     |
+| Steady-state error                        | +15–25 RPM    |
+| Steady-state valve %                      | ~64–70 %      |
+| `SIM_STATUS` transition                   | 0 → 1 on enable |
+| Safety trips                              | none          |
+
+### Behavior
+
+- The loop closes. RPM rises smoothly to the setpoint, overshoots ~4 %, then
+  hunts down toward steady state.
+- The reverse-acting law (`error = PV − SP`, positive gains) works as designed
+  on the brake-style valve.
+- The derivative-on-measurement design suppresses the setpoint kick — there
+  is no large initial valve spike on the step.
+- **Visible hunting in steady state.** With these gains the valve oscillates
+  ~25 % peak-to-peak (e.g. 56 % → 100 % between scans early on, narrowing to
+  ~62 % → 70 % once settled) while RPM cycles ±20 RPM around 5015. The loop is
+  stable but under-damped; `Kp` is large enough to provoke continuous
+  micro-corrections.
+- **Safety interlock verified.** A separate run against a sim left at
+  RPM = 7000 (from a prior diagnostic) tripped the PLC's overspeed latch
+  (`RPM_TRIP_RPM = 6500`): the program forced `iValveCmdRaw = 0` and
+  `iSafetyEnable = 0` every scan, the sim stayed in `STATUS_STOPPED`, and
+  the loop never armed. Restarting the sim cleared the trip on the next run.
+
+### Final gains
+
+Unchanged. `Kp = 0.3`, `Ki = 0.05`, `Kd = 0.01`. They produce a usable closed
+loop and prove the architecture. They are **not** the final tuning — the
+hunting above should be reduced before extended use. The brief allowed gain
+changes only with before/after data; one verified run is not enough evidence
+to re-set the gains. **Next tuning pass:** drop `Kp` to ~0.15–0.2 and watch
+whether hunting collapses without losing the ~1 s rise time, then re-tune
+`Ki` if steady-state error widens.
+
+### Wiring changes required to make this run
+
+These were not gain changes but were required for the program to actually
+exchange data with the slave device. They live in `dyno_control.st`:
+
+- **`AT %IW100..106` / `AT %QW100..103` clauses** added to the I/O image
+  `VAR` block. Without these, OpenPLC's slave-device data never reaches the
+  program's named variables — the program would compile cleanly and run with
+  all-zero inputs, and its computed `iValveCmdRaw` writes would go nowhere.
+- **`CONFIGURATION Config0 / RESOURCE Res0 / TASK Main` block** appended at
+  the end of the file. OpenPLC v3's build pipeline expects `Config0.c` and
+  `Res0.c` from `iec2c`; those are only emitted when the ST file declares a
+  resource. `TASK Main` is declared with `INTERVAL := T#50ms` to match
+  `DT_S` exactly.
+
+Both changes are I/O-agnostic in the sense the file's docstring intends: the
+addresses are the local OpenPLC address space, not the Modbus wire layout. The
+slave-device configuration in OpenPLC is still the one thing that changes when
+moving sim → real hardware.
