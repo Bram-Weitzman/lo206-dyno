@@ -83,29 +83,6 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-Last worked on: 2026-05-20. PID tuning pass 2 against the sim. Dropped `Kp`
-from 0.30 → 0.20 in `dyno_control.st` (`Ki = 0.05`, `Kd = 0.01` unchanged),
-recompiled under OpenPLC v3 and re-ran the 0 → 5000 RPM step from a freshly
-restarted sim. Hunting collapsed (valve swing 5.3 pp → 1.3 pp), settling
-sped up (~13.9 s → ~10.1 s), steady-state error tightened (8.4 → 3.0 RPM),
-with rise effectively unchanged (~1.5 s) and a small overshoot increase
-(~4 % → ~6 %). All pass-2 acceptance criteria from the brief met; `Kp = 0.20`
-is the new committed default. Full before/after table and notes in
-`plc/README.md` under "PID Tuning Log".
-
-Gotcha worth carrying forward for next time: OpenPLC's `/compile-program`
-silently 302-redirects to `/login` when the session cookie has expired and
-no recompile actually happens, so always re-login before a compile call and
-verify the rebuild by checking `core/openplc`'s mtime — not just the HTTP
-status. The sim also has no mechanical-loss model, so between captures the
-sim must be killed and restarted to start a step from RPM = 0.
-
-Immediate next step: choose between (a) instrumenting the sim for a swept
-RPM sweep (`CONTROL_MODE = 2`, the not-yet-implemented sweep mode) to
-capture torque-vs-RPM curves end-to-end, or (b) beginning Phase 1 dashboard
-scaffolding (Next.js skeleton + a Modbus → SQLite logging service). The
-control loop is now usable; the bottleneck has shifted from controller
-tuning to observability/UX.
-
-Blocking questions: None outstanding from this session. Architectural and
-hardware questions still live in the "Known open questions" section above.
+Last worked on: 2026-05-20 — Task 1/6: audited torque_curve.py, findings as inline comments.
+Immediate next step: Task 2/6 — fix torque_curve.py clamp above 6100 RPM.
+Blocking questions: None.
