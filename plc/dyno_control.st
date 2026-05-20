@@ -59,7 +59,7 @@ PROGRAM dyno_control
 VAR CONSTANT
     (* PID gains. Starting values for sim tuning; re-tune, then calibrate
        on the real rig where valve gain and inertia differ. *)
-    KP : REAL := 0.3;    (* TODO: calibrate against real hardware *)
+    KP : REAL := 0.2;    (* TODO: calibrate against real hardware *)
     KI : REAL := 0.05;   (* TODO: calibrate against real hardware *)
     KD : REAL := 0.01;   (* TODO: calibrate against real hardware *)
 

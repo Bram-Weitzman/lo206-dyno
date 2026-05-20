@@ -216,3 +216,65 @@ Both changes are I/O-agnostic in the sense the file's docstring intends: the
 addresses are the local OpenPLC address space, not the Modbus wire layout. The
 slave-device configuration in OpenPLC is still the one thing that changes when
 moving sim → real hardware.
+
+## PID Tuning Log
+
+Each pass is a 0 → 5000 RPM step response captured against a freshly restarted
+simulator, sampled at 50 ms (matches the PLC scan). Steady-state metrics are
+computed over the last 5 s of a 25 s capture. SS band is the min–max RPM in
+that window; valve swing is the peak-to-peak range of the PID's commanded
+valve position (`VALVE_POSITION_CMD`, not the post-lag actual) in the same
+window — the raw command is what shows the controller's hunting amplitude
+without the 120 ms valve-lag smoothing.
+
+| Pass | Kp   | Ki   | Kd   | Rise (s) | Overshoot % | Settle (s) | SS band (RPM) | Valve swing |
+|------|------|------|------|----------|-------------|------------|---------------|-------------|
+| 1    | 0.30 | 0.05 | 0.01 | ~1.4     | ~4%         | ~14        | 5015–5030     | 62–70% (~8 pp) |
+| 2    | 0.20 | 0.05 | 0.01 | ~1.5     | ~6%         | ~10        | 5001–5006     | 66.6–67.9% (1.3 pp) |
+
+**Pass 2 — 2026-05-20.** Dropped `Kp` from 0.30 → 0.20 in `dyno_control.st`,
+recompiled and reloaded into the OpenPLC runtime, and re-ran the same
+0 → 5000 RPM step. `Ki` and `Kd` left untouched per the brief (only re-tune
+`Ki` if SS error widens past ±25 RPM, which it did not — it tightened from
+~+15 RPM to +3 RPM).
+
+Result (vs pass 1):
+- **Hunting collapsed.** Valve swing 5.31 pp → 1.30 pp (≈75 % reduction);
+  steady-state RPM band 14 RPM → 5 RPM.
+- **Settling faster.** Within ±1 % (±50 RPM): 13.85 s → 10.1 s (~28 % faster).
+- **Steady-state error tighter.** Mean SS error 8.4 RPM → 3.0 RPM.
+- **Rise effectively unchanged.** 1.4 s → 1.5 s; the difference is within one
+  50 ms sample, and during the rise the PID output saturates at 0 % (engine
+  cranks to idle and accelerates on full engine torque against zero brake),
+  so the rise is dominated by plant dynamics, not by `Kp`.
+- **Overshoot slightly larger.** 5197 RPM (~4 %) → 5310 RPM (~6 %); expected
+  with lower `Kp`, since once RPM crosses the setpoint the brake builds
+  proportionally slower. Still well inside the safety overspeed trip
+  (`RPM_TRIP_RPM = 6500`).
+
+All pass-2 acceptance criteria from the brief were met: settling improved,
+hunting under 5 % valve swing, rise ≤ 2 s, SS error within ±25 RPM. Pass 2
+gains accepted as the new committed defaults.
+
+**Why no pass 3.** The brief allowed escalating to `Kp = 0.15` if hunting
+persisted, or `Kp = 0.25` if rise grew above ~2.5 s. Neither condition was
+true, so dropping `Kp` further would just trade a couple of RPM of SS
+tightness for slower response. `Kd` was deliberately not touched this pass;
+it stays a future knob if the real hardware shows noisier RPM than the sim.
+
+### Reproducing a tuning pass
+
+For repeat captures on the dev VM, the sim has no mechanical-loss model, so
+killing the engine (SAFETY_ENABLE → 0) does not bleed RPM to zero — the sim
+must be restarted to get a clean step from 0. The pass-2 capture script
+sequence used was: disarm via OpenPLC port 502 (write `SAFETY_ENABLE = 0`,
+`TARGET_RPM = 0`), `fuser -k -n tcp 5020` the sim, restart `modbus_server.py`,
+wait ~1 s for OpenPLC's slave-device master to reconnect and push the zero'd
+holding registers, then arm with `TARGET_RPM = 5000`, `CONTROL_MODE = 1`,
+and finally trigger the step with `SAFETY_ENABLE = 1` (the PLC's bumpless-
+start logic clears the integrator on the rising edge).
+
+(One gotcha encountered this session: OpenPLC's `/compile-program` endpoint
+silently 302-redirects to `/login` if the session cookie has expired, and the
+existing binary remains in place. Verify a recompile actually happened by
+checking `core/openplc`'s mtime, not just the HTTP status.)

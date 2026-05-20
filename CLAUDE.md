@@ -83,22 +83,29 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-Last worked on: 2026-05-20. Initial scaffolding of this section. Most recent
-engineering work was the first end-to-end verification of the closed-loop
-step response (commit `28a4702`): `dyno_control.st` running under OpenPLC v3
-held 5000 RPM against `simulator/modbus_server.py` with committed gains
-(`Kp=0.3, Ki=0.05, Kd=0.01`, `T#50ms`). Rise time ~1.4 s, overshoot ~4 %,
-settled within ±1 % by ~14 s, with visible steady-state hunting. Wiring
-fixes (`AT %IW100..106` / `AT %QW100..103` clauses and a
-`CONFIGURATION / RESOURCE / TASK` block) landed in the same commit; details
-in `plc/README.md` under "Verified Step Response (sim)".
+Last worked on: 2026-05-20. PID tuning pass 2 against the sim. Dropped `Kp`
+from 0.30 → 0.20 in `dyno_control.st` (`Ki = 0.05`, `Kd = 0.01` unchanged),
+recompiled under OpenPLC v3 and re-ran the 0 → 5000 RPM step from a freshly
+restarted sim. Hunting collapsed (valve swing 5.3 pp → 1.3 pp), settling
+sped up (~13.9 s → ~10.1 s), steady-state error tightened (8.4 → 3.0 RPM),
+with rise effectively unchanged (~1.5 s) and a small overshoot increase
+(~4 % → ~6 %). All pass-2 acceptance criteria from the brief met; `Kp = 0.20`
+is the new committed default. Full before/after table and notes in
+`plc/README.md` under "PID Tuning Log".
 
-Immediate next step: PID tuning pass against the sim. Drop `Kp` to ~0.15–0.2
-and rerun the 0 → 5000 RPM step against a freshly restarted sim; goal is to
-collapse the steady-state hunting (currently ~62–70 % valve cycling) without
-losing the ~1 s rise time. Re-tune `Ki` only if steady-state error widens
-past ~25 RPM. Document before/after numbers in the README per the standing
-rule that gain changes require evidence.
+Gotcha worth carrying forward for next time: OpenPLC's `/compile-program`
+silently 302-redirects to `/login` when the session cookie has expired and
+no recompile actually happens, so always re-login before a compile call and
+verify the rebuild by checking `core/openplc`'s mtime — not just the HTTP
+status. The sim also has no mechanical-loss model, so between captures the
+sim must be killed and restarted to start a step from RPM = 0.
+
+Immediate next step: choose between (a) instrumenting the sim for a swept
+RPM sweep (`CONTROL_MODE = 2`, the not-yet-implemented sweep mode) to
+capture torque-vs-RPM curves end-to-end, or (b) beginning Phase 1 dashboard
+scaffolding (Next.js skeleton + a Modbus → SQLite logging service). The
+control loop is now usable; the bottleneck has shifted from controller
+tuning to observability/UX.
 
 Blocking questions: None outstanding from this session. Architectural and
 hardware questions still live in the "Known open questions" section above.
