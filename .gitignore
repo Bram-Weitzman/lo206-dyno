@@ -1,0 +1,40 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+
+# --- Node / Next.js ---
+node_modules/
+.next/
+out/
+
+# --- Databases ---
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Secrets ---
+.env
+.env.*
+secrets/
+*.key
+*.pem
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- IDE ---
+.vscode/
+.idea/
+
+# --- Local data / logs ---
+data/
+logs/
+*.log
