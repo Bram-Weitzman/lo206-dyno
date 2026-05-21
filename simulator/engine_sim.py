@@ -44,12 +44,28 @@ DT_DEFAULT = 0.010                 # s, 10 ms physics step (matches server loop)
 J_ENGINE = 0.05                    # kg.m^2 rotational inertia
 
 # --- Hydraulic pump load model ---
-# TODO: calibrate against real pump curve. At 100% valve and RPM_MAX the pump
-# absorbs slightly more than peak engine torque (~9.8 ft-lbs), so the PID has
-# authority to stall the engine if misconfigured -- this is intentional.
-PUMP_LOAD_GAIN = 12.0              # ft-lbs at 100% valve, RPM_MAX
+PUMP_LOAD_GAIN = 18.5              # Updated for confirmed hardware: 1.52 cu.in. gear pump,
+                                   # 2.1:1 belt reduction. Derivation: at peak torque
+                                   # (10 ft-lbs, 3,500 RPM), required pressure ~1,042 PSI.
+                                   # Gain scales valve position (0.0-1.0) to pump load torque
+                                   # in ft-lbs. With back-pressure baseline of 200 PSI,
+                                   # effective modulation range is 200-1,200 PSI across valve
+                                   # travel.
+                                   # TODO: calibrate against real hardware -- this remains a
+                                   # model estimate.
 MAX_PUMP_TORQUE = PUMP_LOAD_GAIN   # ft-lbs reference for pressure scaling
-MAX_PRESSURE_PSI = 700.0           # PSI at MAX_PUMP_TORQUE
+MAX_PRESSURE_PSI = 700.0           # PSI at MAX_PUMP_TORQUE (proportional contribution; the
+                                   # total modeled pressure is BACKPRESSURE_BASELINE_PSI plus
+                                   # this proportional term, capped at OVERPRESSURE_TRIP_PSI)
+BACKPRESSURE_BASELINE_PSI = 200    # Return-line back-pressure valve, set ~200 PSI.
+                                   # Ensures pump always sees minimum resistance even at
+                                   # full valve opening -- eliminates the low-RPM floor
+                                   # observed in simulation (RPM couldn't drop below ~4,236
+                                   # because pump load went to zero at low flow). Real
+                                   # hardware: Princess Auto Item 8688939, adjustable
+                                   # 50-3,000 PSI relief valve, $69.99 CAD.
+                                   # TODO: tune on real hardware -- 150-250 PSI is the
+                                   # expected range depending on desired low-RPM floor.
 
 # --- Proportional valve lag (first order) ---
 TAU_VALVE = 0.120                  # s, 120 ms -- midpoint of the 50-200 ms hardware spec
@@ -209,8 +225,15 @@ class DynoEngine:
         else:
             self._rpm_capped_at_max = False
 
-        # 4. Hydraulic pressure from brake torque.
-        self._pressure_psi = (self._pump_load / MAX_PUMP_TORQUE) * MAX_PRESSURE_PSI
+        # 4. Hydraulic pressure: back-pressure baseline + proportional contribution
+        #    from pump brake torque. The return-line back-pressure valve enforces
+        #    a minimum reading at all RPMs -- even at 0% valve, pressure does not
+        #    fall below BACKPRESSURE_BASELINE_PSI. Cap at the safety trip so the
+        #    published register stays bounded if pump_load spikes.
+        proportional_psi = (self._pump_load / MAX_PUMP_TORQUE) * MAX_PRESSURE_PSI
+        self._pressure_psi = BACKPRESSURE_BASELINE_PSI + proportional_psi
+        if self._pressure_psi > mb.OVERPRESSURE_TRIP_PSI:
+            self._pressure_psi = mb.OVERPRESSURE_TRIP_PSI
 
         # 5. CHT thermal model.
         heat_input = self._pump_load * self._rpm * THERMAL_SCALE

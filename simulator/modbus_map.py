@@ -89,5 +89,10 @@ AFR_REG_MAX    = 200
 
 # --- Safety trip limits (physical plant limits; enforced by the sim and PLC) ---
 # Kept here so the contract module is the single source of truth for limits.
-OVERPRESSURE_TRIP_PSI = 750.0   # > MAX_PRESSURE_PSI (700): only abnormal load trips it
+OVERPRESSURE_TRIP_PSI = 1200.0  # Raised from 750 PSI. Hardware design uses 1.52 cu.in. pump
+                                # with 2.1:1 belt reduction; peak operating pressure at full
+                                # engine torque (10 ft-lbs) is ~1,042 PSI. System relief valve
+                                # set at 1,500 PSI. 1,200 PSI gives software warning before
+                                # mechanical relief fires. TODO: confirm with pressure transducer
+                                # on real hardware.
 OVERTEMP_TRIP_C       = 250.0
