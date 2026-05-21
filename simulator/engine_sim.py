@@ -130,6 +130,27 @@ def _clamp(value, lo, hi):
     return lo if value < lo else hi if value > hi else value
 
 
+def clutch_torque_fraction(rpm: float) -> float:
+    """
+    Returns the fraction of engine torque transferred to the pump (0.0 to 1.0)
+    based on current RPM and the centrifugal clutch engagement model.
+
+    Hilliard Inferno Flame, stock config: 2 black + 2 white springs, 0 heavy weights.
+    Real-world data: engagement at ~3,400 RPM, estimated lockup at ~4,200 RPM under
+    pump load. No RPM dip at engagement -- smooth torque ramp confirmed from race data.
+
+    Below engagement: clutch fully open, pump sees no load.
+    Engagement to lockup: linear ramp -- torque transfer increases with RPM.
+    Above lockup: fully locked, full torque transfer.
+    """
+    if rpm < CLUTCH_ENGAGEMENT_RPM:
+        return 0.0
+    elif rpm >= CLUTCH_LOCKUP_RPM:
+        return 1.0
+    else:
+        return (rpm - CLUTCH_ENGAGEMENT_RPM) / (CLUTCH_LOCKUP_RPM - CLUTCH_ENGAGEMENT_RPM)
+
+
 class DynoEngine:
     """Lumped model of the LO206 engine coupled to a hydraulic brake.
 
