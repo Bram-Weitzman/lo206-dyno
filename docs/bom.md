@@ -61,7 +61,7 @@ into `torque_curve.py` to model the .440 restriction.
 | Raspberry Pi 4 or 5 + SD card + PSU               | $120 - 180       |
 | Load cell 50 lbf compression + HX711 amplifier — confirmed | $35 - 65         |
 | Hall-effect RPM sensor (gear tooth) + mounting bracket — confirmed | $15 - 35         |
-| Pressure transducer 0-1000 PSI                    | $30 - 60         |
+| Pressure transducer 0-1500 PSI, 4-20mA — confirmed | $35 - 75         |
 | K-type thermocouple + MAX31855 interface          | $25 - 40         |
 | ADS1115 ADC                                       | $15              |
 | Proportional valve + inline body — confirmed (see below) | $360 - 500       |
@@ -428,6 +428,114 @@ Confirm supply and output voltage before ordering.
 - TODO: on first hardware run, measure actual RPM noise band and compare to
   the ±100 RPM simulator model; update RPM_NOISE_BAND in engine_sim.py if
   the real figure differs significantly
+
+## Pressure transducer — CONFIRMED
+
+| Spec             | Value                                                           |
+|------------------|-----------------------------------------------------------------|
+| Type             | Piezoresistive, 2-wire loop-powered                            |
+| Range            | 0–1,500 PSI                                                    |
+| Output           | 4–20 mA current loop                                           |
+| Supply voltage   | 12–24 VDC (loop supply)                                        |
+| Connection       | 1/4 in. NPT male (confirm against pump outlet port thread)     |
+| Signal path      | 4–20 mA → 250 Ω burden resistor → 1–5 V → ADS1115 → I2C → Pi |
+| Modbus register  | 30003 HYDRAULIC_PSI (existing, no register map change)         |
+| Normal reading   | 500–700 PSI (clutch locked, full throttle)                     |
+| Software trip    | 900 PSI (OVERPRESSURE_TRIP_PSI, simulator/modbus_map.py)       |
+| Mechanical relief| 1,500 PSI (system relief valve, Item 8688947)                  |
+| Resolution       | 1,500 PSI ÷ ~24,000 usable ADS1115 counts ≈ 0.06 PSI/count    |
+| Est. cost (CAD)  | $30–60 (transducer) + $5 (burden resistor) = ~$35–65 total     |
+
+#### Why 4–20 mA over 0–5 V
+
+Two interface options exist for pressure transducers in this price range:
+
+- **0–5 V:** Simple. Pi reads it via ADS1115 directly. No burden resistor.
+  Susceptible to common-mode voltage noise on the cable. On a trailer
+  next to a running kart ignition system, this is a real liability — the
+  ignition coil and plug wire radiate significant RF that couples into
+  unshielded signal wiring.
+
+- **4–20 mA current loop:** Slightly more complex (needs a burden resistor
+  and a loop supply). Immune to voltage noise — interference on the cable
+  changes the wire voltage but the loop current is unaffected, so the
+  reading is clean. The 4 mA live-zero also provides wire-break detection:
+  a reading below 4 mA means the cable is open or the sensor has failed,
+  not that pressure is zero.
+
+For a trailer-based dyno with a running kart engine, 4–20 mA is the correct
+professional choice. The added complexity is one 250 Ω resistor.
+
+#### Why 0–1,500 PSI (not 0–1,000 PSI)
+
+The system relief valve (Item 8688947) fires at 1,500 PSI. A 0–1,000 PSI
+transducer clips before the relief fires — the reading saturates at 1,000 PSI
+and the system has no visibility into pressure between 1,000 and 1,500 PSI.
+A 0–1,500 PSI transducer covers the full system range while still providing
+adequate resolution across the normal operating range (500–700 PSI):
+0.06 PSI/count with a 16-bit ADS1115.
+
+#### Signal conditioning — wiring
+
+  Loop supply (12-24 VDC)
+       (+) ──── Transducer V+ (red)
+                Transducer V- / signal out (black) ──┐
+                                                      │
+                                                 250 Ω resistor
+                                                      │
+                ADS1115 AIN0 ────────────────────────┘
+                ADS1115 GND ──── Loop supply (-)
+
+  At 4 mA:  V = 0.004 × 250 = 1.000 V → 0 PSI
+  At 20 mA: V = 0.020 × 250 = 5.000 V → 1,500 PSI
+
+  ADS1115 PGA setting: ±6.144 V (covers full 1–5 V range).
+  PSI = (V_measured - 1.0) / 4.0 × 1500.0
+
+  Wire-break detection: reading < 0.8 V (< ~3.2 mA) = sensor fault.
+  This complements the SIM_STATUS fault register — on real hardware,
+  implement a sensor-fault check in the I/O layer and set SIM_STATUS = 2
+  if the transducer reading drops below the live-zero threshold.
+
+#### ADS1115 note
+
+The ADS1115 (already in BOM, $15) has 4 channels and runs on I2C alongside
+the MCP4725 DAC (valve driver Option A). Confirm I2C addresses don't conflict:
+- ADS1115 default address: 0x48 (ADDR pin to GND)
+- MCP4725 default address: 0x60
+No conflict — both can share the Pi's I2C bus (GPIO 2/3, pins 3/5).
+
+#### Mounting notes
+
+- Mount the transducer on the high-pressure side of the pump (pump outlet,
+  before the proportional valve)
+- Use a hydraulic tee fitting to tap into the pressure line — do not install
+  inline (would restrict flow)
+- Use hydraulic-rated thread sealant (not PTFE tape) on NPT threads in a
+  hydraulic system
+- Keep signal cable away from ignition wiring — the 4–20 mA loop is noise-
+  immune but the cable can still act as an antenna; route along chassis ground
+
+#### Canadian sources
+
+- Generic 4–20 mA pressure transducers (0–1,500 PSI, 1/4 NPT):
+  Amazon.ca, AliExpress (search: "4-20mA pressure transducer 1500 PSI 1/4 NPT")
+  Typical cost: $30–50 CAD
+- Omega PX309 series (higher quality, longer warranty):
+  ca.omega.com — PX309-1.5KI5V or similar; ~$80–120 CAD
+- 250 Ω precision resistor (0.1% tolerance recommended): Digi-Key Canada,
+  Mouser Canada — ~$1–3 CAD
+
+#### Open items before ordering
+
+- Confirm pump outlet port thread is 1/4 in. NPT (verify against Princess
+  Auto Item 8375446 spec sheet before ordering transducer)
+- Confirm loop supply voltage available on the dyno (12 V or 24 V) — affects
+  transducer selection (most 4–20 mA units accept 12–30 VDC, confirm range)
+- Confirm ADS1115 I2C address against other I2C devices on the bus before
+  wiring (default 0x48 — no conflict with MCP4725 at 0x60)
+- TODO: on first hardware run, verify 4 mA live-zero reading with no pressure
+  applied; calibrate PSI conversion against a known reference pressure
 
 ## Proportional valve — CONFIRMED
 
