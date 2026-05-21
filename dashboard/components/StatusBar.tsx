@@ -5,7 +5,12 @@ import { Sample } from "@/lib/types";
 const MODE_LABELS = ["Manual", "PID", "Sweep"];
 const STATUS_LABELS = ["Stopped", "Running", "Fault"];
 
-function fmt(n: number | undefined, digits = 0): string {
+// CHT and pressure accent colors — kept as constants so they can
+// be referenced for the bottom border too.
+const CHT_COLOR = "#fb923c";      // orange-400
+const PRESSURE_COLOR = "#a78bfa"; // violet-400
+
+function fmt(n: number | undefined | null, digits = 0): string {
   if (n === undefined || n === null || Number.isNaN(n)) return "--";
   return n.toLocaleString(undefined, {
     minimumFractionDigits: digits,
@@ -13,29 +18,37 @@ function fmt(n: number | undefined, digits = 0): string {
   });
 }
 
-function Field({
+function MetricCard({
   label,
   value,
   unit,
-  accent,
+  color,
+  borderColor,
+  flash,
 }: {
   label: string;
   value: string;
   unit?: string;
-  accent?: string;
+  color: string;
+  borderColor?: string;
+  flash?: boolean; // true = pulse red (limiter / fault highlight)
 }) {
   return (
-    <div className="flex flex-1 flex-col items-center border-r border-zinc-800 px-4 py-3 last:border-r-0">
-      <span className="text-xs uppercase tracking-widest text-zinc-500">
-        {label}
-      </span>
-      <span
-        className={`font-mono text-3xl font-semibold tabular-nums ${accent ?? "text-zinc-50"}`}
-      >
+    <div
+      className={`flex flex-col items-center justify-center gap-1 rounded-lg
+        border border-zinc-800 bg-zinc-900 px-4 py-4
+        ${flash ? "animate-pulse" : ""}`}
+      style={{ borderBottomColor: borderColor ?? color, borderBottomWidth: 3 }}
+    >
+      <span className="font-mono text-4xl font-bold tabular-nums leading-none"
+        style={{ color }}>
         {value}
         {unit ? (
-          <span className="ml-1 text-base text-zinc-400">{unit}</span>
+          <span className="ml-1 text-lg font-normal text-zinc-400">{unit}</span>
         ) : null}
+      </span>
+      <span className="text-xs font-medium uppercase tracking-widest text-zinc-500">
+        {label}
       </span>
     </div>
   );
@@ -43,33 +56,72 @@ function Field({
 
 export default function StatusBar({ sample }: { sample: Sample | null }) {
   const s = sample;
-  const status = s ? (STATUS_LABELS[s.sim_status] ?? String(s.sim_status)) : "--";
-  const mode = s ? (MODE_LABELS[s.control_mode] ?? String(s.control_mode)) : "--";
 
-  const statusAccent = !s
-    ? "text-zinc-50"
+  const statusLabel = s
+    ? (STATUS_LABELS[s.sim_status] ?? String(s.sim_status))
+    : "--";
+  const modeLabel = s
+    ? (MODE_LABELS[s.control_mode] ?? String(s.control_mode))
+    : "--";
+
+  const statusColor = !s
+    ? "#a1a1aa"
     : s.sim_status === 2
-      ? "text-red-400"
-      : s.sim_status === 1
-        ? "text-green-400"
-        : "text-zinc-300";
+    ? "#f87171"
+    : s.sim_status === 1
+    ? "#4ade80"
+    : "#a1a1aa";
 
   return (
-    <div className="flex flex-wrap items-stretch rounded-lg border border-zinc-800 bg-zinc-900">
-      <Field label="RPM" value={fmt(s?.rpm)} accent="text-amber-300" />
-      <Field
+    <div className="grid grid-cols-4 gap-3">
+      {/* Row 1: power metrics */}
+      <MetricCard
+        label="RPM"
+        value={fmt(s?.rpm)}
+        color="#fbbf24"
+      />
+      <MetricCard
         label="Torque"
         value={fmt(s?.torque_ftlbs, 1)}
         unit="ft-lbs"
-        accent="text-cyan-300"
+        color="#22d3ee"
       />
-      <Field label="HP" value={fmt(s?.hp, 1)} accent="text-pink-300" />
-      <Field label="Valve" value={fmt(s?.valve_pct, 1)} unit="%" />
-      <Field label="Mode" value={mode} />
-      <Field label="Status" value={status} accent={statusAccent} />
-      {s?.limiter_active === 1 ? (
-        <Field label="Limiter" value="CUT" accent="text-red-400" />
-      ) : null}
+      <MetricCard
+        label="HP"
+        value={fmt(s?.hp, 1)}
+        color="#f472b6"
+      />
+      <MetricCard
+        label="Valve"
+        value={fmt(s?.valve_pct, 1)}
+        unit="%"
+        color="#f4f4f5"
+      />
+
+      {/* Row 2: engine state */}
+      <MetricCard
+        label="CHT"
+        value={fmt(s?.cht_c)}
+        unit="°C"
+        color={CHT_COLOR}
+      />
+      <MetricCard
+        label="Pressure"
+        value={fmt(s?.pressure)}
+        unit="PSI"
+        color={PRESSURE_COLOR}
+      />
+      <MetricCard
+        label="Mode"
+        value={modeLabel}
+        color="#a1a1aa"
+      />
+      <MetricCard
+        label="Status"
+        value={statusLabel}
+        color={statusColor}
+        flash={s?.sim_status === 2}
+      />
     </div>
   );
 }
