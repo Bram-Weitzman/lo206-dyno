@@ -279,3 +279,48 @@ rig operable without a manual pymodbus poke.
 the web Monitoring table this session, so `%QW103` could not be forced from the UI
 — which is why the port-502 write is the working enable path. Data flow itself was
 fine; only the web Monitoring view was empty.
+
+### Bring-up notes — 2026-05-21 ops/split-brain session
+
+**Symptom (Round 2):** dashboard intermittently showed "No live run" / zeros
+even though `./start_all.sh` had succeeded and the sim was clearly running on
+:5020.
+
+**Root cause: duplicate sim + duplicate logger — split-brain on `run_id`.** Two
+`modbus_server.py` and two `logger/logger.py` processes were alive. The losing
+sim couldn't bind 5020 but the winning logger and losing logger each opened a
+fresh row in `test_runs` and wrote samples under different run IDs. The
+dashboard's `/api/live` reads "the latest run" — whichever logger opened the
+newer row owned the dashboard, regardless of which sim was actually being
+driven by the PLC. NOT a code bug. **Slave `ir_size=7` is still correct by
+design — do not "fix" it.**
+
+**Operational fix:** `start_all.sh` and `stop_all.sh` are now idempotent
+(commit 1ddc623):
+- `start_all.sh` gates each service on `pgrep -f` of its cmdline pattern. If
+  something already matches, it records that PID into the pidfile and skips
+  the spawn instead of blindly launching a second instance.
+- `stop_all.sh` kills ALL pids matching each pattern (not just the one in the
+  pidfile), so orphans started outside `start_all.sh` (e.g. by
+  `scripts/start_sim.sh` or a manual `python3 logger/logger.py`) are also
+  cleaned up.
+
+**Clean cold-start sequence (now safe to re-run any time):**
+1. `./stop_all.sh`   — kills any sim/logger/dashboard duplicates by pattern,
+   leaves OpenPLC runtime alone
+2. `./start_all.sh`  — idempotent; brings up exactly one of each service.
+   Verify with `ps -eo pid,cmd | grep -E 'modbus_server|logger|next' | grep -v grep`
+3. Confirm sim is on **:5020** (`ss -tln | grep 5020`) and OpenPLC slave is
+   pointed there
+4. Enable via OpenPLC port **:502** — write `%QW101=TARGET_RPM`,
+   `%QW102=1` (CONTROL_MODE = PID), `%QW103=1` (SAFETY_ENABLE). Do NOT
+   write SAFETY_ENABLE directly to the sim on :5020; the PLC overwrites it
+   within one scan (see prior session note).
+
+**Engine left RUNNING at 5000 RPM** at end of session so the operator sees
+live data on the dashboard. To stop cleanly: write `%QW103=0` via :502.
+
+**Still open: Issue #3.** No software start/throttle path — enabling the
+engine still requires a manual `pymodbus` write to OpenPLC :502. The
+dashboard remains read-only. Closing #3 (adding a dashboard command-write
+path) is the real fix for ergonomic operation.
