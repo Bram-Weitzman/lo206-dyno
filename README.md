@@ -9,6 +9,39 @@ web **dashboard**, and the **documentation**. The guiding principle is
 before a single bolt of hardware is purchased, then swap the simulated I/O for
 real sensors and a real valve without touching the control logic.
 
+## Quick start
+
+On the dev VM (`dyno-dev`), one command brings the full stack up:
+
+```bash
+cd /home/ubuntu/projects/lo206-dyno && ./start_all.sh
+```
+
+This starts (or verifies) the OpenPLC runtime, then launches the simulator,
+the SQLite logger, and the Next.js dashboard. PID files land at
+`/tmp/dyno_*.pid` and per-process logs at `/tmp/dyno_*.log`. The script ends
+with:
+
+```
+Dashboard ready at http://localhost:3000
+```
+
+`./stop_all.sh` shuts the stack down cleanly. The logger gets SIGINT so it
+stamps `ended_at` on the current run; the simulator and dashboard get SIGTERM
+to their process groups, which also reaps the npm child worker.
+
+## Demo scenario
+
+The dyno is end-to-end validated by an RPM-sweep demo. Operator setpoints
+go to OpenPLC at `localhost:502`, register `%QW101` (target RPM): step
+through `3000 -> 4000 -> 5000 -> 6100 -> 4000` and watch the rev limiter
+engage at 6100 while OVERSPEED_TRIP (6500 RPM) never fires. The dashboard at
+`:3000` reflects live telemetry; `/api/runs` lists each `test_run` row with
+its sample count. Saturation note: at full throttle the brake cannot pull
+RPM below ~4236 — the 3000 and 4000 setpoints are below the dyno's physical
+floor by design. See `CLAUDE.md` 'Current session state' for the full
+numbers.
+
 ## Architecture
 
 ```

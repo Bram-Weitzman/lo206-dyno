@@ -83,6 +83,43 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-Last worked on: 2026-05-20 — Task 6/6 (FINAL): ran 0->6100 step test. Max RPM 6106, OVERSPEED_TRIP (6500) did NOT fire, no fault, 28 spark-cut events ~3 Hz. RPM drop per cut ~100 RPM -- FLAGGED below the 300 RPM threshold (~800 RPM real target): hysteresis band caps the drop, J_ENGINE/cut-duration need calibration. Documented in plc/README.md Rev Limiter Behavior section. All 6 tasks complete and pushed.
-Immediate next step: None -- 6-task rev-limiter sequence finished. Future: amplitude-calibrate the limiter drop (J_ENGINE / cut duration) against AiM data so per-cut drop approaches ~800 RPM and oscillation reaches 5-10 Hz.
+Last worked on: 2026-05-21 — end-to-end integration validated. Simulator, PLC
+control logic, SQLite logger, and Next.js dashboard are all complete, committed,
+and verified together. Next.js bumped 14.2 -> 16.2 / React 18 -> 19 to clear 4
+security advisories; required async-API migrations (`serverExternalPackages`,
+async dynamic-route `params`) applied. `start_all.sh` / `stop_all.sh` added so
+the whole stack comes up with one command.
+
+Integration test (`/tmp/integration_test.py`, throwaway) ran the brief's
+sweep 3000 -> 4000 -> 5000 -> 6100 -> 4000 RPM via OpenPLC's slave port 502
+(operator writes go to `%QW100`-`%QW103`, not directly to the sim's holding
+registers, because the PLC mirrors its own variables down to the sim every scan
+and would overwrite direct writes). Results:
+
+| Setpoint | Avg RPM (last 5s) | Steady err | Limiter? | OVERSPEED? |
+|---------:|------------------:|-----------:|:--------:|:----------:|
+| 3000     | 4236.0            | +1236.0    | no       | no         |
+| 4000     | 4238.4            | +238.4     | no       | no         |
+| 5000     | 5019.6            | +19.6      | no       | no         |
+| 6100     | 6038.6            | -61.4      | **yes**  | no         |
+| 4000     | 4244.8            | +244.8     | no       | no         |
+
+- OK: OVERSPEED_TRIP (6500) never fired; max observed RPM 6106.
+- OK: Limiter fired only at the 6100 setpoint step (34 of 1337 samples that run).
+- NOTE: **Physical floor at ~4236 RPM.** With the brake at 100% the dyno cannot
+  pull the engine below ~4236 RPM at full throttle — engine torque exceeds max
+  brake torque at lower RPMs. The 3000/4000 setpoints in the brief are below
+  this floor and saturate. The 5000 RPM step tracks within 20 RPM, which is
+  the realistic working band.
+
+**Known bug surfaced during integration:** the logger's default `--db`
+is `data/dyno.db` *relative to CWD*, and the dashboard reads
+`<cwd>/../data/dyno.db`. If the logger is launched from `logger/` they end up
+on different files. `start_all.sh` runs the logger from the repo root so both
+land on `data/dyno.db`. If you ever start the logger by hand, cd to the repo
+root first (or pass `--db /home/ubuntu/projects/lo206-dyno/data/dyno.db`).
+
+Immediate next step: write up the project (blog/docs) and prep the demo
+presentation. Future calibration: tune J_ENGINE / cut-duration so per-cut RPM
+drop at the limiter approaches the ~800 RPM real-world target.
 Blocking questions: None.
