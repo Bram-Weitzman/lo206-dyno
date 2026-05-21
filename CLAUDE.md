@@ -9,9 +9,21 @@ entire control system can be validated before any hardware is bought.
 
 ## Current phase
 
-**Phase 0 — scaffolding and simulator bring-up.** No hardware exists yet.
-The immediate goals are: lock the Modbus register map, implement the torque
-curve interpolation, and get the Modbus server talking to OpenPLC.
+**Current phase: hardware procurement.**
+
+The full software stack is complete and verified end-to-end on dyno-dev:
+- Simulator: DynoEngine class, clutch model, RPM noise model, 14/14 tests passing
+- PLC control logic: PID hold, manual, sweep modes; safety interlocks
+- Logger: Modbus TCP → SQLite at ~100 ms poll rate
+- Dashboard: Next.js, live chart (RPM/torque/HP), run history, CSV export —
+  verified 2026-05-21 with PLC holding 5000 RPM in PID mode
+- Outstanding software issue: below 3,400 RPM the clutch disengages but
+  pressure and CHT still compute from raw pump load (one-line fix, low
+  priority — see Known open questions)
+- Hardware: procurement in progress — proportional valve now confirmed
+  (see docs/bom.md); all other hardware TBD
+
+**Phase 4 (presentation/blog): not started, deadline May 29.**
 
 **Hydraulic circuit decisions locked (May 2026):**
 - Pump: 1.52 cu.in. gear pump, Princess Auto Item 8375446
@@ -24,9 +36,8 @@ curve interpolation, and get the Modbus server talking to OpenPLC.
   sprocket is available in 3/4 in. bore before machining a custom part
 - Operating pressure range: 500–700 PSI normal, 900 PSI software trip, 1,500 PSI mechanical relief
 - Back-pressure baseline: ~200 PSI (return-line relief valve, Item 8688939)
-- Note: OVERPRESSURE_TRIP_PSI in `simulator/modbus_map.py` is currently 1,200 PSI
-  (set in previous session). Pending update to 900 PSI in next code session to
-  match revised chain-drive pressure model.
+- Note: OVERPRESSURE_TRIP_PSI in `simulator/modbus_map.py` is **900 PSI**
+  (applied in commit 0dd0a7a) to match the chain-drive (3.5:1) pressure model.
 - These values are reflected in `engine_sim.py` constants and `docs/bom.md`
 - Observed RPM floor at max braking (100% valve): ~3,135 RPM in the updated
   simulator, down from ~4,236 RPM under the original 12.0 pump-load gain.
@@ -36,7 +47,7 @@ curve interpolation, and get the Modbus server talking to OpenPLC.
 - **Simulator**: Python 3.12 (pymodbus, numpy, pytest), venv at `/opt/dyno-venv`
 - **PLC**: OpenPLC runtime, IEC 61131-3 Structured Text
 - **Transport**: Modbus TCP (port 502)
-- **Dashboard**: Next.js (not scaffolded yet)
+- **Dashboard**: Next.js — complete (live RPM/torque/HP chart, run history, CSV export)
 - **Persistence**: SQLite for local runs, PostgreSQL if/when we centralize
 
 ## Critical design principle
@@ -81,24 +92,30 @@ must be changed *first*, deliberately, before either side.
 
 ## Known open questions
 
-- **Valve driver**: 0-10V amp card vs PWM + MOSFET — undecided. See
-  `docs/sim_to_real.md`.
+- **Proportional valve**: RESOLVED — Sun Hydraulics RPGC-LBN confirmed; full
+  spec, sources, and cost in `docs/bom.md`. Remaining sub-decision: the driver
+  circuit (Option A custom MCP4725 DAC + DRV8871 vs Option B Sun PRZE-LBN amp
+  card), both specced in `docs/bom.md` — pick one before ordering.
 - **Engine inertia / valve lag constants**: placeholders in `engine_sim.py`;
   need real values once we can bench-measure the engine and valve.
 - **Torque curve fidelity**: we currently use published B&S Black Slide data.
   Other slide configs are not yet digitized (see `docs/bom.md`).
 - **Safety thresholds**: RPM > 6500 remains a first-guess — confirm against
   engine builder recommendations once on real hardware. PSI software trip:
-  `OVERPRESSURE_TRIP_PSI` in `simulator/modbus_map.py` is currently 1,200 PSI
-  (set in previous session) and is **pending revision to 900 PSI** in the next
-  code session to match the chain-drive (3.5:1) pressure model. System relief
-  valve (Princess Auto Item 8688947) is set at 1,500 PSI; the software trip
-  fires first. Back-pressure baseline is ~200 PSI (return-line relief, Item
-  8688939). Review both thresholds after first live runs.
+  `OVERPRESSURE_TRIP_PSI` in `simulator/modbus_map.py` is **900 PSI** (applied
+  in commit 0dd0a7a) to match the chain-drive (3.5:1) pressure model. System
+  relief valve (Princess Auto Item 8688947) is set at 1,500 PSI; the software
+  trip fires first. Back-pressure baseline is ~200 PSI (return-line relief, Item
+  8688939). Review the RPM trip threshold after first live runs.
 - **AFR channel (30006)**: reserved but unpopulated — wideband O2 is a Phase 2
   hardware addition.
-- **Dashboard data path**: does the dashboard read Modbus directly, or through
-  a logging service writing to SQLite/Postgres? Undecided.
+- **Dashboard data path**: RESOLVED — the logger polls Modbus TCP and writes
+  SQLite (`data/dyno.db`); the dashboard reads that SQLite DB. Verified
+  end-to-end 2026-05-21.
+- **Clutch model pressure/CHT scope** (known issue, low priority): below
+  CLUTCH_ENGAGEMENT_RPM (3,400) the clutch is disengaged from engine
+  acceleration, but hydraulic pressure and CHT still compute from the raw
+  (un-clutched) pump load. One-line fix; deferred. Surfaced 2026-05-21.
 
 ## Real-world calibration data
 
@@ -135,7 +152,8 @@ the control system.
 - Source: likely Hall-effect pickup with single trigger tooth — normal for kart
 - Sim should add representative noise to RPM output so PID is tuned against
   realistic input, not a perfectly clean signal
-- TODO: add `RPM_NOISE_BAND = 100` to `engine_sim.py` in a future session
+- DONE: `RPM_NOISE_BAND = 100` applied in `engine_sim.py` (commit 4b126e1) —
+  ±100 RPM injected on `get_rpm()` output only; internal physics state stays clean.
 
 ### Calibrated sim constants (applied)
 The following constants are confirmed from real-world data and have been
