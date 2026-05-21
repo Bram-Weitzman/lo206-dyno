@@ -324,3 +324,47 @@ live data on the dashboard. To stop cleanly: write `%QW103=0` via :502.
 engine still requires a manual `pymodbus` write to OpenPLC :502. The
 dashboard remains read-only. Closing #3 (adding a dashboard command-write
 path) is the real fix for ergonomic operation.
+
+### Bring-up notes — 2026-05-21 remote-browser HMR reload storm
+
+**Symptom (Round 3):** the operator's browser at `http://10.20.99.55:3000`
+showed "No live run" and empty cards even though all server-side checks
+passed: one of each process, logger writing the same `data/dyno.db` the
+dashboard reads (inode-verified), run #8 open, `SAFETY_ENABLE=1` at the
+PLC, and `/api/live` returning valid live JSON when curled from the VM
+itself.
+
+**Root cause: Next 16 cross-origin dev guard.** Browsing the dev server
+from any host other than `localhost` (the operator PC -> `10.20.99.55`)
+counts as cross-origin in Next 16. With no `allowedDevOrigins` in
+`next.config.js`, the HMR WebSocket (`/_next/webpack-hmr`) was blocked at
+startup -- visible in the dev-server log as a one-time warning. The HMR
+reconnect path then fell back to force-reloading `/` several times per
+second; the access log showed hundreds of `GET /` against only ~3
+`GET /api/live` calls. Each reload re-mounted `<Page>`, scheduled
+`setInterval(tick, 500)` -- and then the next reload tore the component
+down before the first 500 ms tick fired. The poll never got a chance to
+run on the client even though `page.tsx` correctly declared `"use client"`
+and the useEffect was structured properly.
+
+**This bug is undetectable by curl-from-VM testing.** `curl http://localhost:3000/api/live`
+from inside the VM is same-origin -- Next never trips the guard, the API
+returns fine, and the server side looks healthy. The failure mode lives
+entirely in the remote browser. **Future verification of dashboard
+behavior MUST include opening the URL in a real browser on the operator
+PC -- a healthy `/api/live` curl from the VM is not sufficient.**
+
+**Fix (commit 0b625b7):** added `allowedDevOrigins: ["10.20.99.55"]` to
+`dashboard/next.config.js` and restarted the dashboard only (sim, logger,
+OpenPLC, and run #8 left untouched). Post-restart the dev-server access
+log shows a steady stream of `GET /api/live` and zero new `GET /` rows
+over a 15-second window -- the reload storm is gone. No recharts /
+hydration / React-19 errors in the log, so the secondary recharts-vs-
+React-19 suspect does not need a bump right now.
+
+**Recharts caveat for future migrations:** `recharts ^2.13.3` is what the
+Next 14 -> 16 / React 18 -> 19 migration left in `package.json`. It
+worked here without a render-time throw, but recharts 2.13.x had
+documented React-19 incompatibilities; if `<LiveChart>` ever starts
+throwing during render after a dependency bump, suspect recharts first
+and try bumping to 2.15+.
