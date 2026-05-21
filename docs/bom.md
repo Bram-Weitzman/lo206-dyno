@@ -60,7 +60,7 @@ into `torque_curve.py` to model the .440 restriction.
 |---------------------------------------------------|------------------|
 | Raspberry Pi 4 or 5 + SD card + PSU               | $120 - 180       |
 | Load cell 50 lbf compression + HX711 amplifier — confirmed | $35 - 65         |
-| Hall-effect RPM sensor (gear tooth) + mounting bracket — confirmed | $15 - 35         |
+| Hall-effect RPM sensor (gear tooth) + bracket — confirmed | $15 - 35         |
 | Pressure transducer 0-1500 PSI, 4-20mA — confirmed | $35 - 75         |
 | K-type thermocouple + MAX31855 interface          | $25 - 40         |
 | ADS1115 ADC                                       | $15              |
@@ -73,7 +73,7 @@ into `torque_curve.py` to model the .440 restriction.
 | Hilliard Flame clutch — on hand (kart)            | $0               |
 | Torque arm mechanical assembly (axle stub, carriers, hub, arm) | $120 - 230       |
 | Wiring, enclosure, connectors, hydraulic fittings | $50 - 100        |
-| **Subtotal (without wideband O2)**                | **~$1,125 - 1,780**|
+| **Subtotal (without wideband O2)**                | **~$1,125 - 1,790**|
 | Wideband O2 + controller (Phase 2)                | +$150 - 250      |
 
 ### Cost driver
