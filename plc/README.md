@@ -76,7 +76,9 @@ OpenPLC is the Modbus **master**; the simulator is the **slave/server**.
    - Protocol: **Modbus TCP**.
    - IP: the simulator host; Port: **5020** (or 502 if the sim logged 502).
    - Map the registers per `register_map.md`:
-     - **Input registers** 30001–30007 → read into the PLC (`%IW…`).
+     - **Input registers** 30001–30008 → read into the PLC (`%IW…`).
+       (30008 `LIMITER_ACTIVE` is read-only telemetry for the host/logger;
+       the control law does not use it — see *Rev Limiter Behavior* below.)
      - **Holding registers** 40001–40004 → written by the PLC (`%QW…`).
    - The order you add points sets their `%IW`/`%QW` indices — keep that order
      consistent with how `dyno_control.st`'s variables are bound.
@@ -278,3 +280,100 @@ start logic clears the integrator on the rising edge).
 silently 302-redirects to `/login` if the session cookie has expired, and the
 existing binary remains in place. Verify a recompile actually happened by
 checking `core/openplc`'s mtime, not just the HTTP status.)
+
+## Rev Limiter Behavior
+
+The LO206 runs a fixed-RPM spark-cut rev limiter. This is modeled entirely on
+the **simulator side** (`simulator/engine_sim.py`); the PLC control law does
+**not** know the limiter exists and contains no limiter-aware branching by
+design (see "PID behavior at the limiter" below).
+
+### Model approach
+
+- **Spark cut = instantaneous torque cut.** When the limiter is latched,
+  `engine_torque()` returns `0.0`. The published torque curve also clamps to
+  `0.0` above 6100 RPM (`simulator/torque_curve.py`), so zero torque in the
+  limiter band is enforced on both paths (defense in depth).
+- **Latch / release with hysteresis.** Latches at `RPM_LIMITER = 6100`; releases
+  only once RPM falls below `RPM_LIMITER - RPM_LIMITER_HYSTERESIS = 6000`
+  (100 RPM band) so the limiter cannot toggle every tick.
+- **The RPM drop is produced by inertia, not by hand.** With torque cut to zero,
+  the hydraulic brake decelerates the flywheel through the normal inertia
+  integration. RPM is never decremented manually — that was a hard constraint
+  of the model (a manual subtraction would not respond correctly to load).
+- **Hard ceiling.** If any pathological torque/load/`dt` combination overshoots,
+  RPM is clamped at `RPM_LIMITER_MAX = 6200` (warned once on the rising edge).
+
+### Calibration source
+
+Constants are calibrated from **AiM MyChron5 on-track data (MRFKC, 2026-04-24).**
+Real-world behavior recorded there: spark cut at ~6000–6100 RPM, RPM drops
+~700–850 RPM in ≤50 ms, recovers in ~100–150 ms, and the cut repeats at ~5–10 Hz,
+giving an operating band of ~5200–6100 RPM. Observed real-world maximum was
+**6162 RPM** (draft/push overshoot), which sets the 6200 ceiling.
+
+### Draft / push ceiling (6200 RPM)
+
+`RPM_LIMITER_MAX = 6200` represents the worst-case overshoot when the kart is
+pushed above the governed speed (drafting, downhill). It is a hard clamp, not a
+trip — it bounds the model, it does not stop the rig. It sits above the 6162 RPM
+real-world observed max but below the 6500 RPM safety trip.
+
+### OVERSPEED_TRIP rationale
+
+`dyno_control.st` trips at `RPM_TRIP_RPM = 6500`. The limiter fires at 6100 and
+the real-world max is 6162 RPM, leaving a **340 RPM margin** so the safety trip
+never fires during normal limiter oscillation. **Do not lower this threshold** —
+lowering it toward the 6200 ceiling risks false trips on legitimate draft/push
+overshoot. (Comment block in `dyno_control.st` carries the same rationale.)
+
+### PID behavior at the limiter
+
+The speed PID is a **brake** controller: it can only slow the engine by adding
+load, never speed it up. Practical setpoints sit well below 6100, so the limiter
+is normally invisible to the loop. If `TARGET_RPM` were commanded near or above
+6100, the limiter would chop engine torque to zero in that band and the PID,
+having no authority to push *through* a spark cut, would simply see RPM held at
+the limiter — it neither fights nor needs to manage the limiter. The
+`LIMITER_ACTIVE` register (30008) is published purely so the host/logger can
+*observe* this state, not so the control law can react to it.
+
+### Step test results — 2026-05-20
+
+A 0 → 6100 RPM step (engine enabled at 20% valve, run 12 s, sim stepped directly
+at the 10 ms physics rate):
+
+| Metric                          | Result                          |
+|---------------------------------|---------------------------------|
+| Time to first reach 6100 RPM    | ~2.7 s                          |
+| Max RPM reached                 | 6106 RPM                        |
+| **OVERSPEED_TRIP (6500) fired** | **No** ✓                        |
+| Latched fault / STATUS_FAULT    | None                            |
+| Spark-cut events (12 s)         | 28                              |
+| Limiter oscillation frequency   | ~3 Hz                           |
+| RPM drop per cut event          | min 99 / mean 101 / max 105 RPM |
+
+**OVERSPEED_TRIP correctly did not fire** — the limiter and the 6200 hard ceiling
+keep RPM ~340 RPM below the 6500 trip.
+
+### ⚠ Calibration flag — RPM drop too small
+
+The measured RPM drop per cut (**~100 RPM**) is **far below the ~800 RPM
+real-data target** and below the 300 RPM "needs calibration" threshold. Root
+cause: the 100 RPM hysteresis band releases the cut at 6000 RPM, which
+structurally caps the drop near the band width regardless of inertia, and the
+oscillation (~3 Hz) is below the measured 5–10 Hz band. The model is **directionally
+correct** (cut → decel → release → recover, no trip) but is **not yet
+amplitude-calibrated**. Calibration path (future work, out of scope this session):
+revisit `J_ENGINE` so the decel slope matches the measured ≤50 ms / ~800 RPM drop
+and the ~100–150 ms recovery, and widen the effective cut (lower release threshold
+or model a minimum cut duration) so the drop is governed by physics rather than by
+the hysteresis band width.
+
+### Sweep test note — exclude limiter samples from the power curve
+
+When running a power/torque sweep, **discard every sample where
+`LIMITER_ACTIVE` (30008) = 1.** Torque reads `0.0` during a spark cut, so
+including limiter-active samples would punch spurious zeros into the power curve
+and corrupt the peak-power figure. Filter on the register, not on an RPM
+threshold — the limiter band moves with hysteresis.

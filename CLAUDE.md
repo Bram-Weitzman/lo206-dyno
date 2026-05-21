@@ -83,6 +83,6 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-Last worked on: 2026-05-20 — Task 5/6: confirmed RPM_TRIP_RPM (OVERSPEED_TRIP) at 6500 RPM in plc/dyno_control.st and added the 340-RPM-margin rationale comment (limiter 6100, real max 6162).
-Immediate next step: Task 6/6 — run 0->6100 step test (OVERSPEED_TRIP must NOT fire), record RPM drop per cut vs ~800 RPM target, and add Rev Limiter Behavior section to plc/README.md.
+Last worked on: 2026-05-20 — Task 6/6 (FINAL): ran 0->6100 step test. Max RPM 6106, OVERSPEED_TRIP (6500) did NOT fire, no fault, 28 spark-cut events ~3 Hz. RPM drop per cut ~100 RPM -- FLAGGED below the 300 RPM threshold (~800 RPM real target): hysteresis band caps the drop, J_ENGINE/cut-duration need calibration. Documented in plc/README.md Rev Limiter Behavior section. All 6 tasks complete and pushed.
+Immediate next step: None -- 6-task rev-limiter sequence finished. Future: amplitude-calibrate the limiter drop (J_ENGINE / cut duration) against AiM data so per-cut drop approaches ~800 RPM and oscillation reaches 5-10 Hz.
 Blocking questions: None.
