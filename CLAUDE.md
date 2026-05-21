@@ -137,23 +137,24 @@ the control system.
   realistic input, not a perfectly clean signal
 - TODO: add `RPM_NOISE_BAND = 100` to `engine_sim.py` in a future session
 
-### Calibrated sim constants (pending — apply in next code session)
-The following constants are confirmed from real-world data but NOT YET applied
-to the simulator. Apply them in the next dedicated code session.
+### Calibrated sim constants (applied)
+The following constants are confirmed from real-world data and have been
+applied to the simulator. IDLE_RPM, RPM_NOISE_BAND, and OVERPRESSURE_TRIP_PSI
+were applied in the prior code session; the clutch constants are now wired into
+the physics loop via clutch_torque_fraction() (this session).
 Note: `OVERPRESSURE_TRIP_PSI` lives in `simulator/modbus_map.py`, not `engine_sim.py`.
 The real simulator API uses `set_engine_enable()` and valve positions as 0–100 (int),
 not `set_safety_enable()` or 0.0–1.0 floats — use the correct API when applying these.
 
 ```python
 # engine_sim.py
-IDLE_RPM = 2400               # Warm idle, measured from race data
-CLUTCH_ENGAGEMENT_RPM = 3400  # Confirmed vs. spring chart and race data
-CLUTCH_LOCKUP_RPM = 4200      # Estimated under pump load — validate on real hardware
-RPM_NOISE_BAND = 100          # ±RPM noise observed at steady state in race data
+IDLE_RPM = 2400               # APPLIED -- warm idle, measured from race data
+CLUTCH_ENGAGEMENT_RPM = 3400  # APPLIED -- confirmed vs. spring chart and race data
+CLUTCH_LOCKUP_RPM = 4200      # APPLIED -- estimated under pump load; validate on real hardware
+RPM_NOISE_BAND = 100          # APPLIED -- +/-RPM noise on output only, steady state from race data
 
 # simulator/modbus_map.py
-OVERPRESSURE_TRIP_PSI = 900   # Revised: 3.5:1 chain drive, ~595 PSI normal operating
-                              # Currently 1,200 PSI — pending update
+OVERPRESSURE_TRIP_PSI = 900   # APPLIED -- 3.5:1 chain drive, ~595 PSI normal operating
 ```
 
 ## Git author note
