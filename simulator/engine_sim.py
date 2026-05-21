@@ -29,6 +29,7 @@ placeholder value.
 
 import logging
 import math
+import random
 
 from torque_curve import interpolate_torque
 import modbus_map as mb
@@ -83,8 +84,29 @@ AMBIENT_TEMP_C = 25.0
 RPM_MAX = 6100.0                   # nominal governed max; pump-load normalisation
 # Starter brings the engine to ~idle on enable; cranking is not modelled, so on
 # the RUN rising edge we seed RPM to the lowest tabulated curve point.
-# TODO: calibrate against real hardware (true idle speed).
-IDLE_RPM = 2500.0
+IDLE_RPM = 2400   # Warm idle, measured from real LO206 race session data (May 2026).
+                  # Cold/high idle can reach 3,000–3,200 RPM during warmup.
+                  # Warm idle is safely below clutch engagement (~3,400 RPM).
+
+# --- Clutch (Hilliard Inferno Flame, stock springs) ---
+CLUTCH_ENGAGEMENT_RPM = 3400  # RPM at which clutch shoes first contact drum.
+                              # Stock Hilliard Inferno Flame: 2 black + 2 white
+                              # springs, 0 heavy weights per shoe.
+                              # Confirmed: matches spring chart spec and validated
+                              # against race data (cursor at transition: 3,537 RPM).
+
+CLUTCH_LOCKUP_RPM = 4200      # Estimated RPM for full clutch lockup under pump load.
+                              # On-track lockup is lower — pump load is much heavier
+                              # than kart rolling resistance so lockup RPM shifts higher
+                              # under dyno conditions.
+                              # TODO: validate on real hardware during first runs.
+
+# --- Sensor model ---
+RPM_NOISE_BAND = 100          # ±RPM noise observed at steady state in real race data.
+                              # Source: Hall-effect pickup, single trigger tooth —
+                              # normal for kart setups. Applied to RPM output only
+                              # so PID is tuned against realistic input.
+                              # Internal physics state is not affected.
 
 # --- Rev limiter ---
 # Rev limiter model -- calibrated from AiM MyChron5 on-track data (MRFKC,
@@ -262,7 +284,11 @@ class DynoEngine:
 
     # ----------------------------------------------------------------- outputs
     def get_rpm(self) -> float:
-        return self._rpm
+        # Inject representative sensor noise to match real hardware signal characteristics.
+        # Real LO206 data shows ±100 RPM noise band at steady state (race data, May 2026).
+        # Applied to output only -- internal rpm variable used for physics stays clean.
+        rpm_output = self._rpm + random.uniform(-RPM_NOISE_BAND, RPM_NOISE_BAND)
+        return rpm_output
 
     def get_torque(self) -> float:
         """Current engine driving torque (ft-lbs) at present RPM/enable state."""
