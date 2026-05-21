@@ -10,9 +10,10 @@ export const dynamic = "force-dynamic";
 // Used by the history chart and CSV export.
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const runId = Number(params.id);
+  const { id } = await params;
+  const runId = Number(id);
   if (!Number.isFinite(runId)) {
     return NextResponse.json({ error: "invalid run id" }, { status: 400 });
   }
