@@ -83,6 +83,6 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-Last worked on: 2026-05-20 — Task 4/6: added read-only LIMITER_ACTIVE input register (30008) to the contract (register_map.md + modbus_map.py) and populated it from engine.limiter_active in modbus_server.py. pytest 9/9.
-Immediate next step: Task 5/6 — review/confirm OVERSPEED_TRIP at 6500 RPM in plc/dyno_control.st and add the rationale comment.
+Last worked on: 2026-05-20 — Task 5/6: confirmed RPM_TRIP_RPM (OVERSPEED_TRIP) at 6500 RPM in plc/dyno_control.st and added the 340-RPM-margin rationale comment (limiter 6100, real max 6162).
+Immediate next step: Task 6/6 — run 0->6100 step test (OVERSPEED_TRIP must NOT fire), record RPM drop per cut vs ~800 RPM target, and add Rev Limiter Behavior section to plc/README.md.
 Blocking questions: None.

@@ -79,7 +79,10 @@ VAR CONSTANT
 
     (* PLC-side safety trip limits (defense-in-depth; the contract states these
        are "enforced by the sim AND PLC"). Mirror simulator/modbus_map.py. *)
-    RPM_TRIP_RPM  : REAL := 6500.0;  (* TODO: calibrate against real hardware *)
+    (* OVERSPEED_TRIP: 6500 RPM. Limiter fires at 6100; real-world max 6162 RPM
+       (draft, AiM data 2026-04-24). 340 RPM margin prevents false trips.
+       Do not lower this threshold. *)
+    RPM_TRIP_RPM  : REAL := 6500.0;
     PSI_TRIP_PSI  : REAL := 750.0;   (* = OVERPRESSURE_TRIP_PSI; TODO: calibrate *)
     CHT_TRIP_C    : REAL := 250.0;   (* = OVERTEMP_TRIP_C; TODO: calibrate *)
 
