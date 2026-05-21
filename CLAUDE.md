@@ -14,10 +14,19 @@ The immediate goals are: lock the Modbus register map, implement the torque
 curve interpolation, and get the Modbus server talking to OpenPLC.
 
 **Hydraulic circuit decisions locked (May 2026):**
-- Pump: 1.52 cu.in. gear pump, Princess Auto Item 8375446, 2.1:1 belt reduction
-- Operating pressure range: 500–1,100 PSI normal, 1,200 PSI software trip,
-  1,500 PSI mechanical relief
+- Pump: 1.52 cu.in. gear pump, Princess Auto Item 8375446
+- Drive: #219 chain, 20T drive sprocket / 70T driven sprocket, 3.5:1 reduction
+  (same chain and ratio as the kart — reuses existing drivetrain components)
+- Pump shaft speed: 6,200 RPM engine → 1,771 RPM pump (well within 3,000 RPM rating)
+- Operating pressure revised to 500–700 PSI normal (3.5:1 ratio multiplies torque
+  at pump shaft to ~35 ft-lbs, requiring ~595 PSI at 1.52 cu.in. displacement)
+- Custom hub required: driven sprocket to 3/4 in. pump shaft — check if 70T #219
+  sprocket is available in 3/4 in. bore before machining a custom part
+- Operating pressure range: 500–700 PSI normal, 900 PSI software trip, 1,500 PSI mechanical relief
 - Back-pressure baseline: ~200 PSI (return-line relief valve, Item 8688939)
+- Note: OVERPRESSURE_TRIP_PSI in `simulator/modbus_map.py` is currently 1,200 PSI
+  (set in previous session). Pending update to 900 PSI in next code session to
+  match revised chain-drive pressure model.
 - These values are reflected in `engine_sim.py` constants and `docs/bom.md`
 - Observed RPM floor at max braking (100% valve): ~3,135 RPM in the updated
   simulator, down from ~4,236 RPM under the original 12.0 pump-load gain.
@@ -79,15 +88,73 @@ must be changed *first*, deliberately, before either side.
 - **Torque curve fidelity**: we currently use published B&S Black Slide data.
   Other slide configs are not yet digitized (see `docs/bom.md`).
 - **Safety thresholds**: RPM > 6500 remains a first-guess — confirm against
-  engine builder recommendations once on real hardware. PSI > 1200 software
-  trip is now a confirmed hardware decision: system relief valve (Princess
-  Auto Item 8688947) is set at 1,500 PSI; 1,200 PSI software trip fires first.
-  Back-pressure baseline is ~200 PSI (return-line relief, Item 8688939).
-  Review both thresholds after first live runs.
+  engine builder recommendations once on real hardware. PSI software trip:
+  `OVERPRESSURE_TRIP_PSI` in `simulator/modbus_map.py` is currently 1,200 PSI
+  (set in previous session) and is **pending revision to 900 PSI** in the next
+  code session to match the chain-drive (3.5:1) pressure model. System relief
+  valve (Princess Auto Item 8688947) is set at 1,500 PSI; the software trip
+  fires first. Back-pressure baseline is ~200 PSI (return-line relief, Item
+  8688939). Review both thresholds after first live runs.
 - **AFR channel (30006)**: reserved but unpopulated — wideband O2 is a Phase 2
   hardware addition.
 - **Dashboard data path**: does the dashboard read Modbus directly, or through
   a logging service writing to SQLite/Postgres? Undecided.
+
+## Real-world calibration data
+
+Measured from actual LO206 race session (RPM + GPS logs, May 2026).
+Use these as ground truth when setting sim constants and validating
+the control system.
+
+### Engine idle
+- Warm idle RPM: **2,400–2,500 RPM**
+- Cold/high idle during warmup: up to 3,000–3,200 RPM before settling
+- Warm idle is safely below clutch engagement (~3,400 RPM) — engine can
+  be started and warmed without loading the pump
+- Dyno startup procedure: do not blip throttle above ~3,400 RPM until
+  operator is ready to load the pump
+
+### Clutch engagement profile (Hilliard Inferno Flame, stock config)
+- Spring config: 2 black + 2 white springs, 0 heavy weights per shoe
+- First engagement RPM: **~3,400 RPM** (confirmed — matches Hilliard spring
+  chart spec, validated against race data cursor reading of 3,537 RPM at
+  the visible transition point)
+- Engagement behavior: **no RPM dip**. Engine RPM acceleration rate visibly
+  reduces as clutch absorbs inertia torque, but RPM does not drop.
+- Estimated full lockup RPM: **~4,200 RPM** under pump load (TBD — on-track
+  data not conclusive; pump load is much heavier than kart rolling resistance)
+- Sim model: torque_transfer = linear ramp from 0 at CLUTCH_ENGAGEMENT_RPM
+  to 1.0 at CLUTCH_LOCKUP_RPM. No RPM dip modeled.
+- Blog note: on-track clutch engagement is nearly transparent because kart
+  rolling resistance is trivial. On the dyno, engagement against a pressurized
+  pump circuit will be more pronounced — lockup RPM will shift higher under load.
+
+### RPM signal characteristics
+- Real RPM signal shows consistent ~±100 RPM noise band at steady state
+- Visible across all zoom levels of race data
+- Source: likely Hall-effect pickup with single trigger tooth — normal for kart
+- Sim should add representative noise to RPM output so PID is tuned against
+  realistic input, not a perfectly clean signal
+- TODO: add `RPM_NOISE_BAND = 100` to `engine_sim.py` in a future session
+
+### Calibrated sim constants (pending — apply in next code session)
+The following constants are confirmed from real-world data but NOT YET applied
+to the simulator. Apply them in the next dedicated code session.
+Note: `OVERPRESSURE_TRIP_PSI` lives in `simulator/modbus_map.py`, not `engine_sim.py`.
+The real simulator API uses `set_engine_enable()` and valve positions as 0–100 (int),
+not `set_safety_enable()` or 0.0–1.0 floats — use the correct API when applying these.
+
+```python
+# engine_sim.py
+IDLE_RPM = 2400               # Warm idle, measured from race data
+CLUTCH_ENGAGEMENT_RPM = 3400  # Confirmed vs. spring chart and race data
+CLUTCH_LOCKUP_RPM = 4200      # Estimated under pump load — validate on real hardware
+RPM_NOISE_BAND = 100          # ±RPM noise observed at steady state in race data
+
+# simulator/modbus_map.py
+OVERPRESSURE_TRIP_PSI = 900   # Revised: 3.5:1 chain drive, ~595 PSI normal operating
+                              # Currently 1,200 PSI — pending update
+```
 
 ## Git author note
 
