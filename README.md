@@ -70,6 +70,21 @@ at the simulator. See [plc/README.md](plc/README.md).
 
 Not scaffolded yet. See [dashboard/README.md](dashboard/README.md).
 
+## Data Logger
+
+A standalone Python process (`logger/logger.py`) polls the Modbus registers and
+writes timestamped samples to SQLite — one `test_runs` row per session and one
+`samples` row per poll. It is a passive observer: it reads telemetry only and
+never writes the PLC's command registers. Run it against the simulator with:
+
+```bash
+python logger/logger.py --interval 100 --notes "bench test"
+```
+
+To log a real run, only `--host`/`--port` change (`--host <pi-ip>`); everything
+else is identical. The DB defaults to `data/dyno.db` (gitignored). See
+[logger/README.md](logger/README.md) for the schema and example queries.
+
 ## Deeper reading
 
 - [docs/architecture.md](docs/architecture.md) — system design and rationale

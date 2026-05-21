@@ -35,6 +35,8 @@ Thumbs.db
 .idea/
 
 # --- Local data / logs ---
-data/
+# Ignore the logger's SQLite files but keep the data/ directory itself
+# (tracked via data/.gitkeep) so the default --db path works on a fresh clone.
+data/*.db
 logs/
 *.log

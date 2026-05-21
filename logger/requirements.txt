@@ -1,0 +1,4 @@
+# LO206 dyno data logger dependencies.
+# sqlite3 and argparse are stdlib — the only third-party need is the Modbus client.
+# Already present in the dev venv (/opt/dyno-venv); listed here for documentation.
+pymodbus>=3.13,<4
