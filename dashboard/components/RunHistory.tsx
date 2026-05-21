@@ -36,6 +36,17 @@ function fmtTs(ts: string | null): string {
   return Number.isNaN(d.getTime()) ? ts : d.toLocaleString();
 }
 
+function fmtDuration(start: string | null, end: string | null): string {
+  if (!start || !end) return "—";
+  const s = new Date(start).getTime();
+  const e = new Date(end).getTime();
+  if (Number.isNaN(s) || Number.isNaN(e) || e < s) return "—";
+  const secs = Math.round((e - s) / 1000);
+  const m = Math.floor(secs / 60);
+  const sec = secs % 60;
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+}
+
 export default function RunHistory() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
@@ -82,7 +93,7 @@ export default function RunHistory() {
       {selected !== null ? (
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
           <h3 className="mb-2 text-sm font-medium text-zinc-300">
-            Run #{selected} {loading ? "(loading…)" : `— full run`}
+            Run #{selected} power curve {loading ? "— loading…" : ""}
           </h3>
           {points.length > 0 ? (
             <LiveChart points={points} xLabel="seconds since run start" />
@@ -101,6 +112,7 @@ export default function RunHistory() {
               <th className="px-4 py-2 font-medium">Run</th>
               <th className="px-4 py-2 font-medium">Started</th>
               <th className="px-4 py-2 font-medium">Ended</th>
+              <th className="px-4 py-2 font-medium">Duration</th>
               <th className="px-4 py-2 font-medium">Notes</th>
               <th className="px-4 py-2 text-right font-medium">Samples</th>
               <th className="px-4 py-2 text-right font-medium">Export</th>
@@ -109,7 +121,7 @@ export default function RunHistory() {
           <tbody>
             {runs.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-zinc-500">
+                <td colSpan={7} className="px-4 py-6 text-center text-zinc-500">
                   No runs yet.
                 </td>
               </tr>
@@ -128,6 +140,9 @@ export default function RunHistory() {
                   </td>
                   <td className="px-4 py-2 text-zinc-300">
                     {fmtTs(r.ended_at)}
+                  </td>
+                  <td className="px-4 py-2 text-zinc-300">
+                    {fmtDuration(r.started_at, r.ended_at)}
                   </td>
                   <td className="px-4 py-2 text-zinc-400">{r.notes ?? "—"}</td>
                   <td className="px-4 py-2 text-right font-mono tabular-nums text-zinc-300">
