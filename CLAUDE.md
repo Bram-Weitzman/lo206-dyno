@@ -83,6 +83,6 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-Last worked on: 2026-05-20 — Task 3/6: rev limiter model added to engine_sim.py.
-Immediate next step: Task 4/6 — expose LIMITER_ACTIVE on Modbus register map.
+Last worked on: 2026-05-20 — Task 4/6: added read-only LIMITER_ACTIVE input register (30008) to the contract (register_map.md + modbus_map.py) and populated it from engine.limiter_active in modbus_server.py. pytest 9/9.
+Immediate next step: Task 5/6 — review/confirm OVERSPEED_TRIP at 6500 RPM in plc/dyno_control.st and add the rationale comment.
 Blocking questions: None.

@@ -4,7 +4,7 @@ Bridges the I/O-agnostic physics model (``engine_sim.py``) to the PLC over
 Modbus TCP, implementing the slave/server side of ``plc/register_map.md`` (encoded
 in ``modbus_map.py``):
 
-  Input registers   (fc 4): sensors  -- we write, PLC reads   (30001-30007)
+  Input registers   (fc 4): sensors  -- we write, PLC reads   (30001-30008)
   Holding registers (fc 3): commands -- PLC writes, we read   (40001-40004)
 
 pymodbus 3.13 notes
@@ -87,7 +87,7 @@ def build_context() -> ModbusServerContext:
 
 
 def sensor_registers(engine: DynoEngine) -> list[int]:
-    """Map current engine telemetry to the input-register block (IR 0..6),
+    """Map current engine telemetry to the input-register block (IR 0..7),
     applying the scale factors and engineering ranges from the contract."""
     regs = [0] * mb.INPUT_REGISTER_COUNT
     regs[mb.IR_ENGINE_RPM] = _clamp(round(engine.get_rpm() * mb.RPM_SCALE),
@@ -102,6 +102,8 @@ def sensor_registers(engine: DynoEngine) -> list[int]:
                                        0, mb.VALVE_REG_MAX)
     regs[mb.IR_AFR_X10] = _clamp(mb.AFR_NOMINAL_X10, mb.AFR_REG_MIN, mb.AFR_REG_MAX)
     regs[mb.IR_SIM_STATUS] = engine.get_status()
+    regs[mb.IR_LIMITER_ACTIVE] = (mb.LIMITER_ACTIVE if engine.limiter_active
+                                  else mb.LIMITER_RELEASED)
     return regs
 
 
@@ -128,7 +130,7 @@ async def physics_loop(server: ModbusTcpServer, engine: DynoEngine) -> None:
         # 2. Step physics.
         engine.tick(PHYSICS_DT)
 
-        # 3. Publish sensors (input registers 0..6).
+        # 3. Publish sensors (input registers 0..7).
         await ctx.async_setValues(dev, mb.FC_INPUT_REGISTERS,
                                   mb.IR_ENGINE_RPM, sensor_registers(engine))
 
@@ -156,7 +158,7 @@ async def run() -> None:
 
     print(f"[modbus_server] LO206 dyno simulator listening on "
           f"{LISTEN_HOST}:{port} (Modbus TCP, unit id {mb.UNIT_ID})")
-    print(f"[modbus_server] sensors -> input registers 30001-30007; "
+    print(f"[modbus_server] sensors -> input registers 30001-30008; "
           f"commands <- holding registers 40001-40004")
 
     try:

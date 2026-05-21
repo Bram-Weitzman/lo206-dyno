@@ -39,7 +39,8 @@ IR_HEAD_TEMP_C     = 3   # 30004  degC, 1:1
 IR_VALVE_POS_ACT   = 4   # 30005  % x100      (10000 = 100.00%)
 IR_AFR_X10         = 5   # 30006  AFR x10      (147 = 14.7) — reserved
 IR_SIM_STATUS      = 6   # 30007  0=stopped 1=running 2=fault
-INPUT_REGISTER_COUNT = 7
+IR_LIMITER_ACTIVE  = 7   # 30008  0=released 1=rev limiter cutting spark
+INPUT_REGISTER_COUNT = 8
 
 # --- Holding Registers: commands (PLC writes, simulator reads) --- 4000x
 HR_VALVE_POS_CMD   = 0   # 40001  % x100      (5000 = 50.00%)
@@ -69,6 +70,10 @@ SAFETY_RUN   = 1   # run
 STATUS_STOPPED = 0
 STATUS_RUNNING = 1
 STATUS_FAULT   = 2
+
+# --- Limiter-active constants (IR_LIMITER_ACTIVE) ---
+LIMITER_RELEASED = 0
+LIMITER_ACTIVE   = 1
 
 # --- Reserved / placeholder values ---
 AFR_NOMINAL_X10 = 147   # 14.7:1 stoich placeholder (no wideband O2 in Phase 1)

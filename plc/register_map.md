@@ -68,6 +68,7 @@ The PLC must treat these as read-only.
 | 30005   | VALVE_POSITION_ACT | uint16 | 0 - 10000   | Actual valve position, scaled 0.0-100.0% (reflects lag) |
 | 30006   | AFR_x10            | uint16 | 100 - 200   | Air/fuel ratio, scaled x10 (147 = 14.7) — reserved |
 | 30007   | SIM_STATUS         | uint16 | 0 - 2       | 0 = stopped, 1 = running, 2 = fault               |
+| 30008   | LIMITER_ACTIVE     | uint16 | 0 - 1       | 0 = limiter released, 1 = rev limiter cutting spark |
 
 ### Notes
 - **30001 ENGINE_RPM** — the **process variable** the speed PID closes on.
@@ -90,6 +91,12 @@ The PLC must treat these as read-only.
   depends on this yet.
 - **30007 SIM_STATUS** — health/heartbeat. `2 = fault` causes the PLC to latch a
   fault, close the valve, and clear SAFETY_ENABLE.
+- **30008 LIMITER_ACTIVE** — read-only limiter telemetry. `1` while the sim's
+  rev limiter is cutting spark (RPM in the 6100+ limiter band, released below
+  6000 with hysteresis — see `simulator/engine_sim.py`). The PLC must treat
+  this as read-only and **must not** branch its control law on it; it exists
+  so the host/logger can flag and exclude limiter-active samples from the
+  power curve. Not a fault — distinct from SIM_STATUS.
 
 ---
 
@@ -133,7 +140,7 @@ trust the status word alone).
 | Direction          | Registers      | Writer        | Reader |
 |--------------------|----------------|---------------|--------|
 | Commands (out)     | 40001 - 40004  | PLC           | Sim/HW |
-| Telemetry (in)     | 30001 - 30007  | Sim/HW        | PLC    |
+| Telemetry (in)     | 30001 - 30008  | Sim/HW        | PLC    |
 
 Any change to address, scaling, range, or ownership above is a **contract
 change**: update this file and `simulator/modbus_map.py` first, then update both
