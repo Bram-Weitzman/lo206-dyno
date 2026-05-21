@@ -244,7 +244,14 @@ class DynoEngine:
         self._update_limiter()
         eng_tq = self.engine_torque()
         self._pump_load = self._compute_pump_load()
-        net_torque_ftlbs = eng_tq - self._pump_load
+        # Apply centrifugal clutch engagement model.
+        # Below CLUTCH_ENGAGEMENT_RPM the pump is fully disconnected -- no load.
+        # Between engagement and lockup RPM, torque transfer ramps linearly.
+        # This matches real Hilliard Inferno Flame behavior: no RPM dip at engagement,
+        # smooth ramp confirmed from LO206 race data (May 2026).
+        clutch_fraction = clutch_torque_fraction(self._rpm)
+        effective_pump_load = self._pump_load * clutch_fraction
+        net_torque_ftlbs = eng_tq - effective_pump_load
 
         # 3. Inertia integration: angular accel (rad/s^2) -> RPM.
         net_torque_nm = net_torque_ftlbs * FT_LB_TO_NM
