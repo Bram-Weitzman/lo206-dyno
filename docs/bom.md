@@ -60,7 +60,7 @@ into `torque_curve.py` to model the .440 restriction.
 |---------------------------------------------------|------------------|
 | Raspberry Pi 4 or 5 + SD card + PSU               | $120 - 180       |
 | Load cell 50 lbf compression + HX711 amplifier — confirmed | $35 - 65         |
-| Hall-effect RPM sensor + mounting bracket         | $20 - 40         |
+| Hall-effect RPM sensor (gear tooth) + mounting bracket — confirmed | $15 - 35         |
 | Pressure transducer 0-1000 PSI                    | $30 - 60         |
 | K-type thermocouple + MAX31855 interface          | $25 - 40         |
 | ADS1115 ADC                                       | $15              |
@@ -327,6 +327,107 @@ With the HX711 at 24-bit resolution and 50 lbf capacity:
 - Cell must be mounted so its axis is aligned with the force vector from
   the torque arm (perpendicular to the arm, through the shaft centerline).
   Off-axis mounting introduces a cosine error in the torque reading.
+
+## RPM sensor — CONFIRMED
+
+Hall-effect gear tooth sensor reading directly off the existing 20T drive
+sprocket on the engine/clutch output shaft. No additional trigger wheel is
+required — the sprocket teeth are the trigger target.
+
+| Spec             | Value                                                              |
+|------------------|--------------------------------------------------------------------|
+| Type             | Hall-effect gear tooth sensor, digital output                     |
+| Trigger target   | 20T #219 drive sprocket (existing hardware, no modification)      |
+| Pulses per rev   | 20 (one per sprocket tooth)                                       |
+| Max frequency    | 6,100 RPM × 20 ÷ 60 = 2,033 Hz at redline                        |
+| Min frequency    | 2,400 RPM × 20 ÷ 60 = 800 Hz at warm idle                        |
+| Output           | Digital square wave, active-low or push-pull                      |
+| Supply voltage   | 5 VDC (resistor divider to 3.3 V for Pi GPIO — see wiring notes)  |
+| Pi interface     | GPIO interrupt → period measurement → RPM → Modbus register 30001 |
+| Modbus register  | 30001 ENGINE_RPM (existing, no register map change)               |
+| Air gap          | 0.5–2.0 mm to sprocket tooth face (confirm with sensor datasheet) |
+| Est. cost (CAD)  | $10–20 (sensor) + $5–15 (bracket + hardware) = ~$15–35 total      |
+
+#### Why period measurement, not pulse counting
+
+Two approaches exist for computing RPM from a pulse train:
+- **Pulse counting:** count pulses in a fixed window (e.g., 100ms), multiply
+  to get RPM. Simple, but response lags by the window width — at 2,400 RPM
+  you wait 100ms to confirm the engine is at idle.
+- **Period measurement:** measure the time between successive pulses.
+  At 2,033 Hz (redline), each period is 0.49ms. At 800 Hz (idle), 1.25ms.
+  RPM is computed immediately from each pulse. This is the correct approach
+  for a real-time control loop — faster response and better low-speed
+  resolution, which matters near the clutch engagement zone (3,400 RPM).
+
+The Pi uses **pigpio** for GPIO interrupt timing (microsecond resolution).
+Python's `RPi.GPIO` library has too much jitter for reliable period measurement
+at these frequencies; pigpio's C daemon handles timing at the kernel level.
+
+#### Wiring notes
+
+Most Hall-effect sensors in this form factor (e.g., Honeywell SS441A, generic
+gear tooth sensors) are 5 V devices with open-collector or push-pull output.
+The Pi's GPIO pins are 3.3 V — applying 5 V will damage the Pi.
+
+Use a simple resistor voltage divider on the sensor output:
+- 10 kΩ from sensor output to Pi GPIO
+- 20 kΩ from Pi GPIO to GND
+- Divides 5 V output → 3.33 V (within Pi's 3.3 V tolerance)
+- Pull-up to 3.3 V (Pi internal) for open-collector sensors
+
+Total resistor cost: negligible (~$0.10 from parts bin).
+
+Alternatively: source a sensor rated for 3.3 V operation directly — several
+AliExpress gear tooth sensors run from 3.3–24 V and output 3.3 V logic.
+Confirm supply and output voltage before ordering.
+
+#### Mounting notes
+
+- The sensor body needs a rigid bracket with 0.5–2 mm clearance to the
+  sprocket tooth face — confirmed at assembly, not assumed at design
+- Bracket mounts to the dyno chassis or chain guard structure near the
+  drive sprocket
+- Keep the sensor wire away from the ignition coil and plug wire — the
+  kart ignition produces significant RF; route sensor wiring along the
+  chassis (not alongside ignition wiring) and use a twisted pair or
+  shielded cable if noise is observed in testing
+- The RPM_NOISE_BAND of ±100 RPM in the simulator (engine_sim.py) is
+  calibrated from real LO206 race data with a Hall-effect pickup and
+  single trigger tooth. Using 20 teeth will give 20× better raw resolution;
+  the ±100 RPM figure is a conservative bound and the actual noise may be
+  lower. Validate on first hardware run.
+
+#### RPM calculation (real hardware implementation note)
+
+  # On real hardware (logger or dedicated RPM process):
+  # pulse_period_s = time between last two GPIO interrupts (pigpio tick delta)
+  # pulses_per_rev = 20  (20T sprocket)
+  # rpm = (1.0 / pulse_period_s) * 60.0 / pulses_per_rev
+  #
+  # Write rpm (as uint16) to Modbus input register 30001.
+  # Add ±RPM_NOISE_BAND if testing the PID response with the real sensor
+  # during hardware bring-up — the sim already applies this; the real
+  # hardware will have its own natural noise.
+
+#### Canadian sources
+
+- Generic Hall-effect gear tooth sensors: Amazon.ca, AliExpress
+  (search: "Hall effect gear tooth sensor NPN 5V", confirm air gap spec)
+- Honeywell SS441A or SS443A: Digi-Key Canada, Mouser Canada
+- ATS667LSG (Allegro, designed for ferrous gear teeth): Digi-Key Canada
+
+#### Open items before ordering
+
+- Confirm sensor supply voltage and output voltage before ordering —
+  some are 5 V only, some are 3.3–24 V; avoid post-order level-shifting work
+- Confirm minimum air gap specification against the sprocket tooth height on
+  the 20T #219 sprocket (tooth height is typically ~3–4mm on #219)
+- Confirm pigpio is installed on the Pi before hardware bring-up:
+  `sudo apt install pigpio python3-pigpio && sudo systemctl enable pigpiod`
+- TODO: on first hardware run, measure actual RPM noise band and compare to
+  the ±100 RPM simulator model; update RPM_NOISE_BAND in engine_sim.py if
+  the real figure differs significantly
 
 ## Proportional valve — CONFIRMED
 
