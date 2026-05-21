@@ -377,3 +377,42 @@ When running a power/torque sweep, **discard every sample where
 including limiter-active samples would punch spurious zeros into the power curve
 and corrupt the peak-power figure. Filter on the register, not on an RPM
 threshold — the limiter band moves with hysteresis.
+
+## Enabling the engine — operator command path (Issue #3 gap)
+
+`SAFETY_ENABLE`, `TARGET_RPM`, and `CONTROL_MODE` are *operator* commands.
+`dyno_control.st` only ever **reads** `SAFETY_ENABLE` (or forces it to 0 on a
+fault) — it has no path to assert it. The OpenPLC slave-device master then writes
+all four holding registers to the slave every scan, so **writing SAFETY_ENABLE
+directly to the sim (port 5020) is futile** — the PLC overwrites it back to 0
+within one 50 ms scan.
+
+To enable the engine today, write the operator commands to **OpenPLC's own Modbus
+TCP server on port 502**, which exposes the PLC's located output image:
+
+| Addr (port 502) | OpenPLC var | Meaning                 |
+|-----------------|-------------|-------------------------|
+| 101             | `%QW101`    | TARGET_RPM              |
+| 102             | `%QW102`    | CONTROL_MODE (1 = PID)  |
+| 103             | `%QW103`    | SAFETY_ENABLE (1 = run) |
+
+```bash
+/opt/dyno-venv/bin/python3 - <<'PY'
+from pymodbus.client import ModbusTcpClient
+c = ModbusTcpClient('127.0.0.1', port=502); c.connect()
+c.write_register(101, 5000)  # TARGET_RPM
+c.write_register(102, 1)     # CONTROL_MODE = PID
+c.write_register(103, 1)     # SAFETY_ENABLE = run
+c.close()
+PY
+```
+
+The dashboard is **read-only** and has no Modbus write path, so it cannot command
+a start — that missing command path is **Issue #3**. Until it is built, the
+port-502 write above (or a hardwired operator panel on the real rig) is the only
+way to enable the engine.
+
+**Slave-device `Input Registers` size is 7, by design** — the PLC binds only
+`%IW100..106` (7 telemetry words) and intentionally does not map
+`LIMITER_ACTIVE@30008`. Do not change it to 8; the logger reads the limiter
+register straight from the sim.

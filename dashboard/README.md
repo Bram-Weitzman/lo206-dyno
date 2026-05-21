@@ -170,3 +170,14 @@ HTTP 400.
 
 **CSV export** — built client-side from the `/api/run/[id]` response and
 downloaded via a Blob, with the column order documented above.
+
+## Known limitation — read-only (Issue #3)
+
+The dashboard is a pure **observer**: it reads `data/dyno.db` and has **no Modbus
+write path**. It cannot start the engine or change TARGET_RPM / CONTROL_MODE /
+SAFETY_ENABLE. Until a command-write path is added (**Issue #3**), the engine is
+enabled out-of-band by writing the operator commands to OpenPLC's Modbus server on
+port 502 (`%QW101`=TARGET_RPM, `%QW102`=CONTROL_MODE, `%QW103`=SAFETY_ENABLE) —
+see `plc/README.md`. If the dashboard shows "No live run", the engine is simply
+not enabled (`sim_status = 0`); that label is keyed off `sim_status !== 1` in
+`app/page.tsx`, not a data-pipeline failure.

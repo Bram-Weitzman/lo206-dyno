@@ -222,3 +222,60 @@ Immediate next step: write up the project (blog/docs) and prep the demo
 presentation. Future calibration: tune J_ENGINE / cut-duration so per-cut RPM
 drop at the limiter approaches the ~800 RPM real-world target.
 Blocking questions: None.
+
+### Bring-up notes — 2026-05-21 live-debug session
+
+**Symptom:** full stack running (sim :5020, OpenPLC, logger, dashboard :3000) but
+the dashboard showed "No live run" / "Waiting for data" and all telemetry was zero.
+
+**Root cause (failure mode A + C): the engine was never enabled, and it cannot be
+enabled by poking the sim.** `SAFETY_ENABLE` (40004 / `iSafetyEnable AT %QW103`)
+is an *operator* command, but `dyno_control.st` has no code path that ever sets it
+to 1 — it only reads it, or forces it to 0 on a latched fault. The OpenPLC
+slave-device master writes all four holding registers (`%QW100..103`) to the sim
+every 50 ms scan, so a manual write of SAFETY_ENABLE=1 directly to the sim
+(port 5020) is overwritten back to 0 within one scan (verified: wrote
+[_,5000,1,1], read back [_,4000,1,0] after 1 s). The dashboard is read-only and
+has no Modbus write path, so nothing commands a start. This is the Issue #3 gap.
+
+**Two suspected modes ruled out by evidence:**
+- *Not a slave-mapping bug.* OpenPLC `ir_size = 7` is CORRECT, not a typo for 8.
+  The PLC binds only `%IW100..106` (7 telemetry words) and deliberately omits
+  `LIMITER_ACTIVE@30008` (the control law must not branch on it); the logger reads
+  the 8th register straight from the sim. **Do not "fix" ir_size to 8.**
+- *Not a DB-path mismatch.* Logger and dashboard share the same file (inode
+  verified); `/api/live` was already serving valid JSON.
+
+**Fix / how to enable the engine today:** write the operator commands to
+**OpenPLC's own Modbus server on port 502** (exposes the PLC's `%QW` image), NOT
+to the sim on 5020: addr 101 = TARGET_RPM, addr 102 = CONTROL_MODE (1 = PID),
+addr 103 = SAFETY_ENABLE (1 = run). The PLC reads `%QW103=1`, runs the PID, and
+mirrors the holding registers down to the sim — where SAFETY_ENABLE now *stays* 1.
+Verified end-to-end: sim left STOPPED, RPM settled at 5004 (target 5000),
+SIM_STATUS=1, `/api/live` live, dashboard populated.
+
+**Full-stack launch order (one command: `./start_all.sh`):**
+1. OpenPLC runtime (systemd `openplc` + start PLC via web API / :8080)
+2. Simulator `simulator/modbus_server.py` — prefers 502, falls back to **5020**
+   when unprivileged (the usual case)
+3. Logger `logger/logger.py` from the **repo root** so `--db data/dyno.db`
+   resolves to the same file the dashboard reads
+4. Dashboard `npm run dev` in `dashboard/` (:3000)
+Then enable via the port-502 writes above.
+
+**OpenPLC slave-device config (runtime config — NOT version controlled; re-enter
+in the web UI after a fresh OpenPLC install):** Protocol TCP, IP 127.0.0.1, Port
+**5020**, Slave ID **1**, Input Registers start 0 size **7** (`%IW100..106`),
+Holding Registers-Write start 0 size **4** (`%QW100..103`), Holding-Read size 0.
+
+**Open architectural gap (Issue #3):** there is no software start/throttle command
+path. The engine can be enabled today only by a manual write to OpenPLC port 502
+(or a hardwired operator panel on the real rig). The dashboard is a read-only
+observer. Building the dashboard's command-write path (TARGET_RPM / CONTROL_MODE /
+SAFETY_ENABLE -> OpenPLC port 502) is Issue #3 and is the real fix that makes the
+rig operable without a manual pymodbus poke.
+
+**OpenPLC Monitoring page empty:** the located `%IW/%QW` vars were not published to
+the web Monitoring table this session, so `%QW103` could not be forced from the UI
+— which is why the port-502 write is the working enable path. Data flow itself was
+fine; only the web Monitoring view was empty.
