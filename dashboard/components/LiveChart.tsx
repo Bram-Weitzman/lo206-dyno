@@ -16,6 +16,7 @@ export interface ChartPoint {
   rpm: number;
   torque: number;
   hp: number;
+  setpoint?: number;
 }
 
 const RPM_COLOR = "#fbbf24"; // amber
@@ -36,8 +37,18 @@ export default function LiveChart({
   reversed?: boolean;
   xDomain?: [number | "auto", number | "auto"];
 }) {
+  if (points.length === 0) {
+    return (
+      <div className="h-96 w-full flex items-center justify-center">
+        <p className="text-sm text-zinc-600 uppercase tracking-widest">
+          Waiting for data
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-80 w-full">
+    <div className="h-96 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
           data={points}
@@ -106,6 +117,18 @@ export default function LiveChart({
             strokeWidth={2}
             dot={false}
             isAnimationActive={false}
+          />
+          <Line
+            yAxisId="rpm"
+            type="monotone"
+            dataKey="setpoint"
+            name="RPM Target"
+            stroke="#fbbf24"
+            strokeWidth={1.5}
+            strokeDasharray="6 3"
+            dot={false}
+            isAnimationActive={false}
+            connectNulls
           />
           <Line
             yAxisId="power"
