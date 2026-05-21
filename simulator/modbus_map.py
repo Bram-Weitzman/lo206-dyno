@@ -89,10 +89,12 @@ AFR_REG_MAX    = 200
 
 # --- Safety trip limits (physical plant limits; enforced by the sim and PLC) ---
 # Kept here so the contract module is the single source of truth for limits.
-OVERPRESSURE_TRIP_PSI = 1200.0  # Raised from 750 PSI. Hardware design uses 1.52 cu.in. pump
-                                # with 2.1:1 belt reduction; peak operating pressure at full
-                                # engine torque (10 ft-lbs) is ~1,042 PSI. System relief valve
-                                # set at 1,500 PSI. 1,200 PSI gives software warning before
-                                # mechanical relief fires. TODO: confirm with pressure transducer
-                                # on real hardware.
+OVERPRESSURE_TRIP_PSI = 900.0   # Revised for #219 chain drive, 3.5:1 reduction.
+                                 # Peak operating pressure at full engine torque
+                                 # (10 ft-lbs × 3.5 ratio = 35 ft-lbs at pump)
+                                 # is ~595 PSI with 1.52 cu.in. pump. 900 PSI gives
+                                 # software trip margin before 1,500 PSI mechanical
+                                 # relief fires.
+                                 # Previous value: 1,200 PSI (belt drive, 2.1:1).
+                                 # TODO: confirm with pressure transducer on real hardware.
 OVERTEMP_TRIP_C       = 250.0
