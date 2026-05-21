@@ -64,15 +64,16 @@ into `torque_curve.py` to model the .440 restriction.
 | Pressure transducer 0-1000 PSI                    | $30 - 60         |
 | K-type thermocouple + MAX31855 interface          | $25 - 40         |
 | ADS1115 ADC                                       | $15              |
-| Proportional valve                                | $150 - 400       |
-| Valve driver (amp card, or MOSFET + parts)        | $20 - 80         |
+| Proportional valve + inline body — confirmed (see below) | $360 - 500       |
+| Valve driver — Option A custom / Option B Sun card — confirmed | $15 - 150        |
 | Hydraulic pump (1.52 cu.in. gear pump) — confirmed| $170             |
 | Back-pressure valve (return line) — confirmed     | $70              |
 | System relief valve — confirmed                   | $70              |
 | Chain drive (#219, 20T/70T, 3.5:1) — confirmed    | $25 - 90         |
 | Hilliard Flame clutch — on hand (kart)            | $0               |
+| Torque arm mechanical assembly (axle stub, carriers, hub, arm) | $120 - 230       |
 | Wiring, enclosure, connectors, hydraulic fittings | $50 - 100        |
-| **Subtotal (without wideband O2)**                | **~$805 - 1,195**|
+| **Subtotal (without wideband O2)**                | **~$1,125 - 1,780**|
 | Wideband O2 + controller (Phase 2)                | +$150 - 250      |
 
 ### Cost driver
