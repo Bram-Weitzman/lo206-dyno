@@ -13,6 +13,15 @@ entire control system can be validated before any hardware is bought.
 The immediate goals are: lock the Modbus register map, implement the torque
 curve interpolation, and get the Modbus server talking to OpenPLC.
 
+**Hydraulic circuit decisions locked (May 2026):**
+- Pump: 1.52 cu.in. gear pump, Princess Auto Item 8375446, 2.1:1 belt reduction
+- Operating pressure range: 500–1,100 PSI normal, 1,200 PSI software trip,
+  1,500 PSI mechanical relief
+- Back-pressure baseline: ~200 PSI (return-line relief valve, Item 8688939)
+- These values are reflected in `engine_sim.py` constants and `docs/bom.md`
+- Observed RPM floor at max braking (100% valve): ~3,135 RPM in the updated
+  simulator, down from ~4,236 RPM under the original 12.0 pump-load gain.
+
 ## Stack
 
 - **Simulator**: Python 3.12 (pymodbus, numpy, pytest), venv at `/opt/dyno-venv`
@@ -69,8 +78,12 @@ must be changed *first*, deliberately, before either side.
   need real values once we can bench-measure the engine and valve.
 - **Torque curve fidelity**: we currently use published B&S Black Slide data.
   Other slide configs are not yet digitized (see `docs/bom.md`).
-- **Safety thresholds**: current limits (RPM > 6500, PSI > 1200) are
-  first-guess values and must be reviewed against the real hydraulic circuit.
+- **Safety thresholds**: RPM > 6500 remains a first-guess — confirm against
+  engine builder recommendations once on real hardware. PSI > 1200 software
+  trip is now a confirmed hardware decision: system relief valve (Princess
+  Auto Item 8688947) is set at 1,500 PSI; 1,200 PSI software trip fires first.
+  Back-pressure baseline is ~200 PSI (return-line relief, Item 8688939).
+  Review both thresholds after first live runs.
 - **AFR channel (30006)**: reserved but unpopulated — wideband O2 is a Phase 2
   hardware addition.
 - **Dashboard data path**: does the dashboard read Modbus directly, or through
