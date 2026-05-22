@@ -212,14 +212,30 @@ and is the safer shape for commanding a real engine.
   sweep logic in SWEEP) already documents the operator writing it in PID
   mode; mid-run is still within that. No PLC change, no ST recompile/redeploy.
 
-**Browser verification PENDING** — code is committed and pushed but has not
-yet been driven from a remote browser. Curl-from-VM is not sufficient (the
-Next 16 cross-origin guard, CORS, etc. only trip from a real remote browser
-— see the HMR reload-storm note further down). Next session: end-to-end
-verify per the brief's Step 4 (start at 4000, update to 5500 then 4500
-without ending the run, confirm `run_id` constant, confirm Update Target
-hidden/disabled when no run is open and during a sweep run, confirm
-client+server clamping, regression-check the sweep).
+**Browser verification PASSED 2026-05-22** (remote browser at
+`http://10.20.99.55:3000`, not curl).
+- PID hold at 4000 RPM: avg ~4112 RPM, within ±100 RPM noise band.
+- Mid-run target updated 4000→5500: engine tracked UP, avg ~5511 RPM, `run_id`
+  unchanged (run #21).
+- Mid-run target updated 5500→4500: engine tracked DOWN, avg ~4576 RPM, no
+  overpressure trip, `run_id` still #21.
+- Client clamping: typing 2000 sent target 3200, typing 9000 sent target 6100
+  (readback confirmed).
+- Server clamping: raw `fetch('/api/command', set_target, target=1000)` clamped
+  to 3200; target=12000 clamped to 6100; missing target → HTTP 400. `set_target`
+  did NOT touch `control_mode` or `safety_enable` (verified via readback).
+- Update Target visibility: hidden when no run is open, hidden during a sweep
+  run (including across page reloads), shown during a PID run (including
+  across page reloads).
+- Sweep regression: in-session sweep 3200→6100, step 400, dwell 2000ms
+  staircased the full band and auto-closed the run (run #24).
+
+**Reload-state bug found & fixed during verify** (commit 8e4b9b9): on a page
+reload during a sweep run, the in-component `sweepActive` flag reset to false
+and Update Target was wrongly shown. Fixed by polling `/api/command` while ANY
+run is open (not only while `sweepActive`) and gating Update Target on
+`readback.control_mode === 1`. The fix also makes the in-session PID flow more
+robust (readback populates faster across reloads).
 
 ---
 
