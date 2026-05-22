@@ -179,6 +179,24 @@ export default function OperatorControls() {
     }
   }, [pidTarget, openNewRun, postCommand, refreshOpenRun]);
 
+  // Mid-run PID target update. Writes ONLY %QW101 — does not touch
+  // CONTROL_MODE or SAFETY_ENABLE, so the existing PID loop just re-tracks the
+  // new setpoint without re-arming. One deliberate write per click; the field
+  // and slider stay editable during a PID run so the operator can dial in.
+  const onUpdateTarget = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const target = clampInt(pidTarget, LIMITS.pid.lo, LIMITS.pid.hi);
+      const rb = await postCommand({ action: "set_target", target });
+      setStatus(`Target updated · PID holding ${rb.target_rpm} RPM`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [pidTarget, postCommand]);
+
   const onStartSweep = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -254,6 +272,11 @@ export default function OperatorControls() {
     !sweepActive &&
     readback?.control_mode === 1 &&
     readback?.safety_enable === 1;
+  // "PID run open" = a run is open AND it isn't a sweep. This drives the
+  // mid-run Update Target affordance; gating on sweepActive (not readback) is
+  // correct in-session and sweep mode would no-op the write anyway because the
+  // sweep logic owns TARGET_RPM and overwrites it every scan.
+  const pidRunOpen = runOpen && !sweepActive;
 
   return (
     <div className="flex flex-col gap-4">
@@ -346,18 +369,31 @@ export default function OperatorControls() {
               className="accent-emerald-500"
             />
           </label>
-          <button
-            type="button"
-            onClick={onStart}
-            disabled={runOpen || busy}
-            className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500"
-          >
-            ▶ Start (PID)
-          </button>
+          {pidRunOpen ? (
+            <button
+              type="button"
+              onClick={onUpdateTarget}
+              disabled={busy}
+              className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500"
+            >
+              ↻ Update Target
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onStart}
+              disabled={runOpen || busy}
+              className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500"
+            >
+              ▶ Start (PID)
+            </button>
+          )}
         </div>
         <p className="text-xs text-zinc-600">
           Opens a run and holds a constant RPM via the PID. Usable band 3200-6100
-          RPM (brake-capacity floor ~3135 RPM).
+          RPM (brake-capacity floor ~3135 RPM). While a PID run is open, change
+          the target and click Update Target to retune the hold without ending
+          the run.
         </p>
       </div>
 
