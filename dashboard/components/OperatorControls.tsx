@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 // Operator command panel — the dashboard's WRITE surface.
 //
-//   Start       -> POST /api/runs (open a run) THEN /api/command start
-//                  (CONTROL_MODE=PID, SAFETY_ENABLE=1).
+//   Start (PID) -> POST /api/runs (open a run) THEN /api/command start with the
+//                  operator's TARGET_RPM (CONTROL_MODE=PID, SAFETY_ENABLE=1).
 //   Start Sweep -> POST /api/runs THEN /api/command start_sweep (writes the four
 //                  sweep params + CONTROL_MODE=SWEEP + SAFETY_ENABLE=1). The PLC
 //                  steps the setpoint and drops SAFETY_ENABLE itself at the end;
@@ -44,6 +44,7 @@ const SWEEP_STATE_LABELS = ["idle", "running", "complete"];
 // Must match plc/register_map.md (the contract). The API route and the PLC clamp
 // too; this is the first line.
 const LIMITS = {
+  pid: { lo: 3200, hi: 6100 }, // PID hold target band (floor ~3135, redline 6100)
   start: { lo: 2500, hi: 6100 },
   end: { lo: 2500, hi: 6100 },
   step: { lo: 100, hi: 1000 },
@@ -61,6 +62,9 @@ export default function OperatorControls() {
   const [status, setStatus] = useState<string | null>(null);
   const [readback, setReadback] = useState<CommandReadback | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // PID hold target.
+  const [pidTarget, setPidTarget] = useState(4000);
 
   // Sweep params (defaults match register_map.md: floor-aware start 3200).
   const [sweepStart, setSweepStart] = useState(3200);
@@ -161,20 +165,19 @@ export default function OperatorControls() {
     setBusy(true);
     setError(null);
     try {
-      const run = await openNewRun("dashboard operator start (PID hold)");
-      const rb = await postCommand({ action: "start" });
-      setStatus(
-        `Run #${run.id} opened · engine enabled (mode ${
-          MODE_LABELS[rb.control_mode] ?? rb.control_mode
-        }, target ${rb.target_rpm} RPM)`,
-      );
+      const target = clampInt(pidTarget, LIMITS.pid.lo, LIMITS.pid.hi);
+      const run = await openNewRun(`dashboard PID hold ${target} RPM`);
+      // Send the operator's target so the loop holds the chosen RPM, not a stale
+      // register value.
+      const rb = await postCommand({ action: "start", target });
+      setStatus(`Run #${run.id} opened · PID holding ${rb.target_rpm} RPM`);
       await refreshOpenRun();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }, [openNewRun, postCommand, refreshOpenRun]);
+  }, [pidTarget, openNewRun, postCommand, refreshOpenRun]);
 
   const onStartSweep = useCallback(async () => {
     setBusy(true);
@@ -247,20 +250,16 @@ export default function OperatorControls() {
   }, [postCommand]);
 
   const runOpen = openRun !== null;
+  const pidHolding =
+    !sweepActive &&
+    readback?.control_mode === 1 &&
+    readback?.safety_enable === 1;
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Row 1: run + engine controls, e-stop, read-back */}
+      {/* Row 1: run/stop controls, e-stop, read-back */}
       <div className="flex flex-col gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4 md:flex-row md:items-stretch md:justify-between">
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={onStart}
-            disabled={runOpen || busy}
-            className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500"
-          >
-            ▶ Start (PID)
-          </button>
           <button
             type="button"
             onClick={onEndRun}
@@ -299,8 +298,9 @@ export default function OperatorControls() {
           </span>
           {readback && (
             <span className="font-mono text-xs text-zinc-500">
-              readback · mode {MODE_LABELS[readback.control_mode] ?? readback.control_mode} · enable{" "}
-              {readback.safety_enable} · sweep {SWEEP_STATE_LABELS[readback.sweep_state] ?? readback.sweep_state}
+              readback · mode {MODE_LABELS[readback.control_mode] ?? readback.control_mode} · target{" "}
+              {readback.target_rpm} · enable {readback.safety_enable} · sweep{" "}
+              {SWEEP_STATE_LABELS[readback.sweep_state] ?? readback.sweep_state}
             </span>
           )}
           {status && !error && <span className="text-xs text-emerald-400">{status}</span>}
@@ -308,7 +308,60 @@ export default function OperatorControls() {
         </div>
       </div>
 
-      {/* Row 2: sweep run mode */}
+      {/* Row 2: PID hold run mode */}
+      <div className="flex flex-col gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
+            PID hold (constant RPM)
+          </h3>
+          {pidHolding && readback && (
+            <span className="font-mono text-xs text-emerald-400">
+              holding · target {readback.target_rpm} RPM
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-end gap-4">
+          <label className="flex flex-col gap-1 text-xs text-zinc-400">
+            Target RPM
+            <input
+              type="number"
+              min={LIMITS.pid.lo}
+              max={LIMITS.pid.hi}
+              step={100}
+              value={pidTarget}
+              onChange={(e) => setPidTarget(Number(e.target.value))}
+              className="w-28 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 font-mono text-sm text-zinc-100"
+            />
+          </label>
+          <label className="flex min-w-[16rem] flex-1 flex-col gap-1 text-xs text-zinc-400">
+            Hold RPM: <span className="font-mono text-zinc-200">{pidTarget} RPM</span>
+            <input
+              type="range"
+              min={LIMITS.pid.lo}
+              max={LIMITS.pid.hi}
+              step={100}
+              value={pidTarget}
+              onChange={(e) => setPidTarget(Number(e.target.value))}
+              className="accent-emerald-500"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={onStart}
+            disabled={runOpen || busy}
+            className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500"
+          >
+            ▶ Start (PID)
+          </button>
+        </div>
+        <p className="text-xs text-zinc-600">
+          Opens a run and holds a constant RPM via the PID. Usable band 3200-6100
+          RPM (brake-capacity floor ~3135 RPM).
+        </p>
+      </div>
+
+      {/* Row 3: sweep run mode */}
       <div className="flex flex-col gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
