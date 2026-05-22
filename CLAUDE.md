@@ -191,6 +191,31 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
+### Session 2026-05-22 (latest) — PID target-RPM settable from the dashboard
+
+PID hold target RPM is now set from the UI. The operator panel has a dedicated
+**PID hold** panel (target number field + slider, mirroring the sweep panel), and
+`/api/command` "start" writes TARGET_RPM (%QW101) — clamped server-side to
+3200-6100 RPM — before enabling, so a PID run holds the operator's chosen RPM
+instead of a stale register value.
+
+This closes the **last manual-Modbus operator gap**: the dashboard now fully
+drives both PID hold and stepped sweep. (Manual valve mode is intentionally NOT
+exposed in the UI.) **Issue #3's intent is now completely fulfilled** — the rig is
+operable end-to-end from a remote browser with no manual `pymodbus` pokes.
+
+%QW101's mode-scoped ownership is unchanged (operator in PID, sweep logic in
+SWEEP) — this is the operator-write side only, no contract change. No PLC change,
+no ST recompile/redeploy.
+
+**Browser verification PENDING** (this session's Step 4): confirm from a REMOTE
+browser that a PID run holds the chosen target (e.g. 4500 then 5500), that
+clamping works client- and server-side, and that sweep still staircases. If this
+"verification PENDING" note is still here, that end-to-end check has not yet been
+done — the next session should run it.
+
+---
+
 ### Session 2026-05-22 (later) — sweep setpoint visibility + chart legibility
 
 The build is now FEATURE-COMPLETE. Two scoped polish jobs, each verified
