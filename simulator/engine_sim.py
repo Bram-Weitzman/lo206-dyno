@@ -59,10 +59,14 @@ MAX_PRESSURE_PSI = 700.0           # PSI at MAX_PUMP_TORQUE (proportional contri
                                    # total modeled pressure is BACKPRESSURE_BASELINE_PSI plus
                                    # this proportional term, capped at OVERPRESSURE_TRIP_PSI)
 BACKPRESSURE_BASELINE_PSI = 200    # Return-line back-pressure valve, set ~200 PSI.
-                                   # Ensures pump always sees minimum resistance even at
-                                   # full valve opening -- eliminates the low-RPM floor
-                                   # observed in simulation (RPM couldn't drop below ~4,236
-                                   # because pump load went to zero at low flow). Real
+                                   # NOTE: this baseline is applied ONLY to the reported hydraulic
+                                   # pressure telemetry (see tick step 4). It does NOT contribute to
+                                   # brake torque -- _compute_pump_load() is a pure function of valve
+                                   # position and RPM, so the back-pressure valve's real braking
+                                   # contribution is NOT modelled. The low-RPM floor (~4,004 RPM at
+                                   # PUMP_LOAD_GAIN=18.5) is therefore clutch-limited, not set by
+                                   # back-pressure; the real rig's floor will sit lower once this valve
+                                   # adds brake torque -- known sim-fidelity gap (see CLAUDE.md). Real
                                    # hardware: Princess Auto Item 8688939, adjustable
                                    # 50-3,000 PSI relief valve, $69.99 CAD.
                                    # TODO: tune on real hardware -- 150-250 PSI is the
