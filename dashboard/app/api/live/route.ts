@@ -14,7 +14,11 @@ export const runtime = "nodejs"; // better-sqlite3 is a native module
 export const dynamic = "force-dynamic"; // always read the live DB, never cache
 
 // GET /api/live?run_id=N
-// Most recent sample for run N (or the most recent run if run_id is omitted).
+// Latest sample for run N. With no run_id, returns the latest sample of the
+// currently OPEN run (ended_at IS NULL). When NO run is open, returns null so
+// the telemetry cards render blank instead of showing the last (stale) sample of
+// a closed run — the screen must never look "live" while nothing is running.
+// An explicit run_id still resolves that specific run, open or closed.
 export async function GET(req: NextRequest) {
   const d = db();
   const param = req.nextUrl.searchParams.get("run_id");
@@ -23,10 +27,10 @@ export async function GET(req: NextRequest) {
   if (param === null) {
     const latest = d
       .prepare(
-        "SELECT id FROM test_runs ORDER BY started_at DESC, id DESC LIMIT 1"
+        "SELECT id FROM test_runs WHERE ended_at IS NULL ORDER BY started_at DESC, id DESC LIMIT 1"
       )
       .get() as { id: number } | undefined;
-    if (!latest) return NextResponse.json(null);
+    if (!latest) return NextResponse.json(null); // no open run -> blank telemetry
     runId = latest.id;
   } else {
     runId = Number(param);
