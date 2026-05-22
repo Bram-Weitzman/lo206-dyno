@@ -42,7 +42,8 @@
 
     HOLDING REGISTERS (PLC writes, sim reads):
       40001 (0) VALVE_POSITION_CMD -> iValveCmdRaw       % x100 (0-10000)
-      40002 (1) TARGET_RPM         -> iTargetRpmRaw      RPM, 1:1 (operator)
+      40002 (1) TARGET_RPM         -> iTargetRpmRaw      RPM, 1:1 (operator in PID;
+                                                          PLC writes sweep target in SWEEP)
       40003 (2) CONTROL_MODE       -> iControlMode       0 manual/1 PID/2 sweep
       40004 (3) SAFETY_ENABLE      -> iSafetyEnable      0 stop/1 run (operator)
 
@@ -56,8 +57,10 @@
   NOTE on ownership: TARGET_RPM, CONTROL_MODE, SAFETY_ENABLE and the four
   SWEEP_* params are operator commands set via the OpenPLC HMI / dashboard; this
   program consumes them and may OVERRIDE SAFETY_ENABLE -> 0 (from the safety
-  interlock, or by itself at the end of a sweep). VALVE_POSITION_CMD and
-  SWEEP_STATE are this program's computed outputs.
+  interlock, or by itself at the end of a sweep). TARGET_RPM is also
+  mode-scoped: in SWEEP the program WRITES the current stepping target back into
+  it (see MODE_SWEEP below) so the dashboard/logger can track it. The valve
+  command VALVE_POSITION_CMD and SWEEP_STATE are this program's computed outputs.
 *)
 
 PROGRAM dyno_control
@@ -335,6 +338,11 @@ ELSE
             END_IF;
 
             rEffectiveSetpoint := rSweepTarget;
+            (* Mirror sweep target to %QW101 (TARGET_RPM) so the dashboard
+               setpoint line tracks the staircase and the logger records it.
+               Mode-scoped ownership: the sweep owns TARGET_RPM while in SWEEP,
+               overwriting any operator value (see register_map.md). *)
+            iTargetRpmRaw := REAL_TO_INT(rSweepTarget);
             bSweepActivePrev := bPidActive;   (* TRUE unless we just completed *)
 
     ELSE
