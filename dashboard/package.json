@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",
+    "modbus-serial": "^8.0.25",
     "next": "^16.2.6",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
