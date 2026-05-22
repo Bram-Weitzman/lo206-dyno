@@ -22,11 +22,12 @@ wiring this up.
 
 ---
 
-## Holding Registers — PLC writes, simulator reads
+## Holding Registers — commands the simulator reads
 
-These carry commands *from* the controller *to* the engine/load model.
-**Owner: PLC** (the PLC is the only writer; the sim must treat these as
-read-only inputs).
+These carry commands *to* the engine/load model. **Writers:** the operator
+(HMI / dashboard) sets TARGET_RPM, CONTROL_MODE and SAFETY_ENABLE; the PLC
+computes and writes only VALVE_POSITION_CMD (and the operator may write it
+directly in manual mode). The simulator treats all four as read-only inputs.
 
 | Address | Name               | Type   | Range       | Units / scaling                          |
 |---------|--------------------|--------|-------------|------------------------------------------|
@@ -137,10 +138,11 @@ trust the status word alone).
 
 ## Ownership summary
 
-| Direction          | Registers      | Writer        | Reader |
-|--------------------|----------------|---------------|--------|
-| Commands (out)     | 40001 - 40004  | PLC           | Sim/HW |
-| Telemetry (in)     | 30001 - 30008  | Sim/HW        | PLC    |
+| Direction          | Registers      | Writer                     | Reader |
+|--------------------|----------------|----------------------------|--------|
+| Valve command      | 40001          | PLC (operator in manual)   | Sim/HW |
+| Operator commands  | 40002 - 40004  | Operator (HMI / dashboard) | PLC    |
+| Telemetry (in)     | 30001 - 30008  | Sim/HW                     | PLC    |
 
 Any change to address, scaling, range, or ownership above is a **contract
 change**: update this file and `simulator/modbus_map.py` first, then update both
