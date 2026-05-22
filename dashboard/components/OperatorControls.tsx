@@ -99,9 +99,13 @@ export default function OperatorControls() {
     };
   }, [refreshOpenRun]);
 
-  // While a sweep is active, poll SWEEP_STATE; auto-close the run when it hits 2.
+  // While ANY run is open, poll /api/command to keep readback fresh. This is
+  // what tells the UI whether the open run is PID (control_mode=1) or sweep
+  // (=2) — needed so that on a page reload mid-run the Update Target button
+  // is correctly hidden during a sweep run. While a sweep we started is
+  // active, also auto-close the run when SWEEP_STATE hits 2.
   useEffect(() => {
-    if (!sweepActive) return;
+    if (!openRun) return;
     let live = true;
     const poll = async () => {
       try {
@@ -110,9 +114,10 @@ export default function OperatorControls() {
         if (!live || !data.ok) return;
         const rb = data.readback as CommandReadback;
         setReadback(rb);
-        if (rb.sweep_state === 2) {
+        if (sweepActive && rb.sweep_state === 2) {
           // Sweep finished: the PLC already dropped SAFETY_ENABLE. Close the run
-          // so a sweep is one self-contained action.
+          // so a sweep is one self-contained action. sweepActive guards against
+          // a stale SWEEP_STATE=2 from a previous sweep closing an unrelated run.
           const open = await refreshOpenRun();
           if (open) {
             await fetch(`/api/run/${open.id}`, { method: "PATCH" });
@@ -133,7 +138,7 @@ export default function OperatorControls() {
       live = false;
       clearInterval(id);
     };
-  }, [sweepActive, refreshOpenRun]);
+  }, [openRun, sweepActive, refreshOpenRun]);
 
   const postCommand = useCallback(
     async (bodyObj: Record<string, unknown>): Promise<CommandReadback> => {
@@ -272,11 +277,13 @@ export default function OperatorControls() {
     !sweepActive &&
     readback?.control_mode === 1 &&
     readback?.safety_enable === 1;
-  // "PID run open" = a run is open AND it isn't a sweep. This drives the
-  // mid-run Update Target affordance; gating on sweepActive (not readback) is
-  // correct in-session and sweep mode would no-op the write anyway because the
-  // sweep logic owns TARGET_RPM and overwrites it every scan.
-  const pidRunOpen = runOpen && !sweepActive;
+  // "PID run open" = a run is open AND it's in PID mode (not sweep). Gates the
+  // mid-run Update Target affordance. We use BOTH sweepActive (in-session
+  // signal — true while WE are running a sweep) AND readback.control_mode (the
+  // authoritative PLC state, populated by the open-run poll above). Requiring
+  // control_mode === 1 means cross-reload during a sweep run the button stays
+  // hidden, and avoids briefly showing it before the first poll lands.
+  const pidRunOpen = runOpen && !sweepActive && readback?.control_mode === 1;
 
   return (
     <div className="flex flex-col gap-4">
