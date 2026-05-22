@@ -191,6 +191,29 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
+### Session 2026-05-22 (later) — sweep setpoint visibility + chart legibility
+
+The build is now FEATURE-COMPLETE. Two scoped polish jobs, each verified
+end-to-end from a remote browser:
+
+1. **Sweep target mirrored to TARGET_RPM (%QW101).** MODE_SWEEP now writes its
+   internal stepping target into %QW101 on entry and at each step, exposing it on
+   :502 and logging it. The dashboard dashed setpoint line tracks the sweep
+   staircase instead of sitting flat at zero, and the logged `rpm_setpoint` steps
+   with the sweep (verified 3200→3600→…→6100). This is **mode-scoped ownership**,
+   documented in `plc/register_map.md`: in PID mode the OPERATOR owns %QW101; in
+   SWEEP mode the sweep logic owns it, overwriting any operator value — a
+   documented hand-off, NOT a conflict. PID mode is unaffected (still reads %QW101
+   as the operator setpoint; verified the line shows a flat operator target).
+   Closes the rpm_setpoint=0-during-sweep observability gap.
+2. **Chart legibility.** Legend moved ABOVE the plot (no longer collides with the
+   "seconds ago" x-axis title); fixed axis frames (RPM 0–7000 left, ft-lbs/HP
+   0–12 right) so torque and HP use a real share of the height instead of hugging
+   the bottom; distinct setpoint colour (light dashed) vs amber RPM; all four
+   traces at 2–2.5 px. Presentation only — data and polling unchanged.
+
+---
+
 ### Session 2026-05-22 (Session C) — MODE_SWEEP implemented + clutch removed
 
 **Issue #3 is now FULLY CLOSED.** The sweep half is done: MODE_SWEEP is
@@ -251,11 +274,13 @@ hardware without recompiling the PLC.
 launch load instead of RPM-hold), on the project board Backlog. A separate,
 substantial control mode; not part of sweep work.
 
-**Minor known limitations (not blocking):** during a sweep the logged
-`rpm_setpoint` (TARGET_RPM / %QW101) reads 0 and the dashboard sweep panel's
-"target" readout likewise — the sweep's internal stepping target is not mirrored
-to that register, so only the ACHIEVED RPM (not the commanded step target) is
-logged/charted. Cosmetic/observability only; the RPM trace shows the steps.
+**Sweep observability (CLOSED 2026-05-22):** previously the logged
+`rpm_setpoint` (TARGET_RPM / %QW101) read 0 during a sweep because the sweep's
+internal stepping target was never mirrored to that register. Now MODE_SWEEP
+writes its current target into %QW101 each step (mode-scoped ownership, see
+register_map.md), so `rpm_setpoint`, the dashboard setpoint line, and the sweep
+panel readout all track the staircase. See the later 2026-05-22 session note at
+the top of this section.
 
 **Real hardware:** sweep parameters that work in the sim are FIRST GUESSES — real
 engine inertia and valve lag change the dwell needed for a clean torque reading;
