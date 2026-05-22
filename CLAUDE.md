@@ -191,7 +191,39 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-### Session 2026-05-22 (latest) — PID target-RPM settable from the dashboard
+### Session 2026-05-22 (latest) — PID target updatable MID-RUN from the dashboard
+
+The PID hold target can now be retuned **without ending the run.** In the
+**PID hold** panel, while a run is open the target number field and slider
+stay editable and the **Start (PID)** button is replaced by an enabled
+**Update Target** button that sends a single deliberate write of the new
+TARGET_RPM (%QW101). One write per click, not continuous-on-drag — matches
+the rest of the dashboard's "every command is a deliberate button" pattern
+and is the safer shape for commanding a real engine.
+
+- `/api/command` gained a `set_target` action that writes ONLY %QW101 —
+  CONTROL_MODE and SAFETY_ENABLE are NOT touched. Server-side clamp to
+  3200–6100, same band as `start`. The existing PID loop reads %QW101 every
+  scan, so the engine tracks the new setpoint without re-arming.
+- `OperatorControls.tsx` swaps Start (PID) for Update Target while a PID run
+  is open (gate: run open AND not sweepActive). Not shown during a sweep run
+  or when no run is open. Client-clamped to the same 3200–6100 band.
+- **No contract change.** %QW101's mode-scoped ownership (operator in PID,
+  sweep logic in SWEEP) already documents the operator writing it in PID
+  mode; mid-run is still within that. No PLC change, no ST recompile/redeploy.
+
+**Browser verification PENDING** — code is committed and pushed but has not
+yet been driven from a remote browser. Curl-from-VM is not sufficient (the
+Next 16 cross-origin guard, CORS, etc. only trip from a real remote browser
+— see the HMR reload-storm note further down). Next session: end-to-end
+verify per the brief's Step 4 (start at 4000, update to 5500 then 4500
+without ending the run, confirm `run_id` constant, confirm Update Target
+hidden/disabled when no run is open and during a sweep run, confirm
+client+server clamping, regression-check the sweep).
+
+---
+
+### Session 2026-05-22 (earlier) — PID target-RPM settable from the dashboard
 
 PID hold target RPM is now set from the UI. The operator panel has a dedicated
 **PID hold** panel (target number field + slider, mirroring the sweep panel), and
