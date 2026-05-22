@@ -113,12 +113,16 @@ VAR CONSTANT
     SWEEP_COMPLETE : INT := 2;
 
     (* Sweep guard rails (defense-in-depth; the dashboard and /api/command clamp
-       too). SWEEP_START_RPM is clamped into [SWEEP_FLOOR_RPM .. SWEEP_MAX_RPM];
-       the measured sim floor is ~4004 RPM (clutch-limited) so 4000 is the lowest
-       meaningful start. SWEEP_MAX caps at the limiter. STEP_MIN guarantees the
-       target advances (a 0 step would hang the state machine); DWELL_MIN
-       guarantees forward progress on the dwell timer. *)
-    SWEEP_FLOOR_RPM    : REAL := 4000.0;
+       too). SWEEP_START_RPM is clamped into [SWEEP_FLOOR_RPM .. SWEEP_MAX_RPM].
+       With the clutch model removed (2026-05-22) the brake-capacity floor is
+       ~3135 RPM; SWEEP_FLOOR_RPM is set just above warm idle (2400) so the
+       operator can sweep the full usable range down toward that floor. Starting
+       below the brake floor is allowed -- the PID just saturates at full valve
+       on those low steps (RPM sits at the floor), which the state machine
+       tolerates. SWEEP_MAX caps at the limiter. STEP_MIN guarantees the target
+       advances (a 0 step would hang the state machine); DWELL_MIN guarantees
+       forward progress on the dwell timer. *)
+    SWEEP_FLOOR_RPM    : REAL := 2500.0;
     SWEEP_MAX_RPM      : REAL := 6100.0;
     SWEEP_STEP_MIN     : REAL := 50.0;
     SWEEP_DWELL_MIN_MS : REAL := 100.0;

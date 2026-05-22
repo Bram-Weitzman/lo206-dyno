@@ -68,6 +68,10 @@ def test_overtemp_trip():
 
 # --- Clutch model tests ---
 
+# --- Clutch reference-data tests ----------------------------------------
+# The clutch model was BYPASSED in the physics loop (2026-05-22) so the bench
+# dyno measures the engine directly. clutch_torque_fraction() is RETAINED as
+# validated drivetrain reference data, so these tests still verify that math.
 def test_clutch_fraction_below_engagement():
     assert clutch_torque_fraction(0) == 0.0
     assert clutch_torque_fraction(3399) == 0.0
@@ -90,21 +94,27 @@ def test_clutch_fraction_is_monotonic():
     assert fractions == sorted(fractions)
 
 
-def test_pump_unloaded_below_engagement():
-    """Pump load must be zero below clutch engagement RPM.
-
-    With the clutch fully open (RPM < CLUTCH_ENGAGEMENT_RPM) the hydraulic pump
-    is disconnected, so even a 100% valve command applies no braking torque to
-    the engine. RPM is therefore driven by engine torque alone and must not be
-    pulled down by pump load. (DynoEngine.tick is the physics step; get_rpm
-    carries +/-RPM_NOISE_BAND output noise, well within the 2800 margin.)
-    """
+def test_pump_loads_engine_directly_no_clutch():
+    """Clutch removed (2026-05-22): the pump brakes the engine DIRECTLY at all
+    RPMs, including below the OLD clutch-engagement RPM (3400). A 100% valve at
+    low RPM now applies real braking torque -- there is no disengaged region."""
     sim = DynoEngine()
     sim.set_engine_enable(True)
-    sim.set_valve_position(100)  # maximum braking commanded
-    # Step at low RPM -- pump should apply no load
-    sim._rpm = 3000  # force RPM below engagement (CLUTCH_ENGAGEMENT_RPM = 3400)
-    for _ in range(10):
+    sim.set_valve_position(100)        # maximum braking commanded
+    sim._rpm = 3000                    # below the OLD clutch engagement (3400)
+    sim.tick(0.01)
+    assert sim._pump_load > 0.0        # pump is coupled and loading the engine
+
+
+def test_full_brake_floor_no_clutch():
+    """At full throttle with the valve at 100% the engine settles at the
+    brake-capacity floor (~3135 RPM), NOT the old clutch-lockup floor (~4200).
+    Confirms the dyno can now measure below 4200 RPM -- the whole point of
+    removing the clutch."""
+    sim = DynoEngine()
+    sim.set_engine_enable(True)
+    sim.set_control_mode(0)
+    sim.set_valve_position(100)
+    for _ in range(2000):              # 20 s settle at 10 ms/step
         sim.tick(0.01)
-    # RPM should not decrease significantly -- pump is disconnected
-    assert sim.get_rpm() > 2800  # allow for idle dynamics, not pump braking
+    assert 2900.0 < sim._rpm < 3400.0  # brake-capacity floor, below clutch lockup

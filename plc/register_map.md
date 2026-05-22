@@ -64,8 +64,8 @@ PLC ↔ dashboard (:502) side only and `simulator/modbus_map.py` is unchanged.
 
 | Address | %QW    | Name            | Type   | Range       | Owner    | Meaning |
 |---------|--------|-----------------|--------|-------------|----------|---------|
-| 40005   | %QW104 | SWEEP_START_RPM | uint16 | 4000 - 6100 | operator | First step's target RPM. Lower bound clamped to the measured sim floor (~4000); default 4200 (clutch lockup — below it torque readings are clutch-slip-contaminated). |
-| 40006   | %QW105 | SWEEP_END_RPM   | uint16 | 4000 - 6100 | operator | Top of the sweep band; the sweep ends after the step at/above this completes. Capped at 6100 (limiter). |
+| 40005   | %QW104 | SWEEP_START_RPM | uint16 | 2500 - 6100 | operator | First step's target RPM. Lower clamp 2500 (just above warm idle ~2400). With the clutch removed the brake-capacity floor is ~3135 RPM; starting below it just saturates the PID on the low steps (RPM sits at the floor). Dashboard default 3200 (just above the floor). |
+| 40006   | %QW105 | SWEEP_END_RPM   | uint16 | 2500 - 6100 | operator | Top of the sweep band; the sweep ends after the step at/above this completes. Capped at 6100 (limiter). |
 | 40007   | %QW106 | SWEEP_STEP_RPM  | uint16 | 100 - 1000  | operator | RPM increment per step (typical 200-400). |
 | 40008   | %QW107 | SWEEP_DWELL_MS  | uint16 | 500 - 30000 | operator | Time held at each step (ms) so the load cell gets a clean torque reading. Counted off the PLC scan, not wall-clock. Capped at 30000 (PLC reads it as a signed 16-bit INT). |
 | 40009   | %QW108 | SWEEP_STATE     | uint16 | 0 - 2       | PLC      | 0 = idle, 1 = running, 2 = complete. PLC-written; the dashboard polls it to show progress and auto-close the run on completion. |

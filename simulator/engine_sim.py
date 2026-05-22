@@ -136,6 +136,11 @@ def _clamp(value, lo, hi):
 
 def clutch_torque_fraction(rpm: float) -> float:
     """
+    RETAINED REFERENCE DATA -- NOT USED BY THE PHYSICS LOOP. The clutch model
+    was bypassed (2026-05-22) so the bench dyno measures the engine directly
+    across the full rev range; see tick(). This function and the CLUTCH_*
+    constants stay defined as validated drivetrain reference data.
+
     Returns the fraction of engine torque transferred to the pump (0.0 to 1.0)
     based on current RPM and the centrifugal clutch engagement model.
 
@@ -248,14 +253,19 @@ class DynoEngine:
         self._update_limiter()
         eng_tq = self.engine_torque()
         self._pump_load = self._compute_pump_load()
-        # Apply centrifugal clutch engagement model.
-        # Below CLUTCH_ENGAGEMENT_RPM the pump is fully disconnected -- no load.
-        # Between engagement and lockup RPM, torque transfer ramps linearly.
-        # This matches real Hilliard Inferno Flame behavior: no RPM dip at engagement,
-        # smooth ramp confirmed from LO206 race data (May 2026).
-        clutch_fraction = clutch_torque_fraction(self._rpm)
-        effective_pump_load = self._pump_load * clutch_fraction
-        net_torque_ftlbs = eng_tq - effective_pump_load
+        # CLUTCH MODEL BYPASSED (2026-05-22): the bench dyno must measure the
+        # engine across the FULL rev range, so the brake (pump) load couples to
+        # the engine DIRECTLY, with no centrifugal-clutch slip term. Engine torque
+        # drives the inertia integration against the full pump load. The clutch
+        # would impose a ~4200 RPM lockup floor, blinding the dyno in exactly the
+        # range a clutch change would affect. clutch_torque_fraction() and the
+        # CLUTCH_* constants are RETAINED as validated drivetrain reference data
+        # (Hilliard Inferno Flame, 2 black + 2 white springs) -- see CLAUDE.md
+        # "Real-world calibration data" -- but are no longer part of the engine
+        # model. This also resolves the old below-engagement inconsistency where
+        # pressure/CHT used raw (un-clutched) pump load while torque used the
+        # clutched value: everything now uses the same self._pump_load.
+        net_torque_ftlbs = eng_tq - self._pump_load
 
         # 3. Inertia integration: angular accel (rad/s^2) -> RPM.
         net_torque_nm = net_torque_ftlbs * FT_LB_TO_NM
