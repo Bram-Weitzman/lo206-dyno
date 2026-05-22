@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import LiveChart, { ChartPoint } from "@/components/LiveChart";
+import OperatorControls from "@/components/OperatorControls";
 import RunHistory from "@/components/RunHistory";
 import StatusBar from "@/components/StatusBar";
 import { Sample } from "@/lib/types";
@@ -107,6 +108,13 @@ export default function Page() {
           </span>
         </div>
       </header>
+
+      <section className="space-y-4">
+        <h2 className="text-sm font-medium uppercase tracking-widest text-zinc-500">
+          Operator controls
+        </h2>
+        <OperatorControls />
+      </section>
 
       <section className="space-y-4">
         <h2 className="text-sm font-medium uppercase tracking-widest text-zinc-500">
