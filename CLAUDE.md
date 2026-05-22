@@ -208,11 +208,13 @@ operable end-to-end from a remote browser with no manual `pymodbus` pokes.
 SWEEP) — this is the operator-write side only, no contract change. No PLC change,
 no ST recompile/redeploy.
 
-**Browser verification PENDING** (this session's Step 4): confirm from a REMOTE
-browser that a PID run holds the chosen target (e.g. 4500 then 5500), that
-clamping works client- and server-side, and that sweep still staircases. If this
-"verification PENDING" note is still here, that end-to-end check has not yet been
-done — the next session should run it.
+**Browser verification PASSED 2026-05-22** (remote browser, not curl): PID hold
+held the chosen target (4500 -> avg 4513 RPM; 5500 -> avg 5431 RPM, both within
+the +/-100 RPM sensor-noise band); clamping confirmed client-side (UI-typed 2000
+sent as 3200) and server-side (1000 -> 3200, 9000 -> 6100); the stepped sweep
+still staircases (3200 -> 6100, auto-closed). Engine left stopped, no open runs.
+The build is now FEATURE-COMPLETE: the dashboard fully drives PID hold and sweep
+from a remote browser with no manual Modbus pokes.
 
 ---
 
