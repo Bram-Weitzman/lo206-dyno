@@ -10,6 +10,7 @@
   loaded by a hydraulic pump brake. A proportional valve modulates pump
   restriction; raising the valve raises braking torque, which lowers RPM.
   A hand-rolled PID drives the valve to hold a target RPM at full throttle.
+  MODE_SWEEP supervises that PID to walk RPM up the rev range in steps.
 
   I/O-AGNOSTIC BY DESIGN
   ----------------------
@@ -45,10 +46,18 @@
       40003 (2) CONTROL_MODE       -> iControlMode       0 manual/1 PID/2 sweep
       40004 (3) SAFETY_ENABLE      -> iSafetyEnable      0 stop/1 run (operator)
 
-  NOTE on ownership: TARGET_RPM, CONTROL_MODE and SAFETY_ENABLE are operator
-  commands set via the OpenPLC HMI / dashboard; this program consumes them and
-  may OVERRIDE SAFETY_ENABLE -> 0 from the safety interlock. VALVE_POSITION_CMD
-  is this program's only computed actuator output.
+    SWEEP REGISTERS (MODE_SWEEP; PLC <-> dashboard via :502, NOT sim-mirrored):
+      40005 (104) SWEEP_START_RPM  -> iSweepStartRaw     RPM (operator)
+      40006 (105) SWEEP_END_RPM    -> iSweepEndRaw       RPM (operator)
+      40007 (106) SWEEP_STEP_RPM   -> iSweepStepRaw      RPM/step (operator)
+      40008 (107) SWEEP_DWELL_MS   -> iSweepDwellRaw     ms/step (operator)
+      40009 (108) SWEEP_STATE      -> iSweepState        0 idle/1 run/2 done (PLC out)
+
+  NOTE on ownership: TARGET_RPM, CONTROL_MODE, SAFETY_ENABLE and the four
+  SWEEP_* params are operator commands set via the OpenPLC HMI / dashboard; this
+  program consumes them and may OVERRIDE SAFETY_ENABLE -> 0 (from the safety
+  interlock, or by itself at the end of a sweep). VALVE_POSITION_CMD and
+  SWEEP_STATE are this program's computed outputs.
 *)
 
 PROGRAM dyno_control
@@ -97,6 +106,22 @@ VAR CONSTANT
 
     SAFETY_STOP    : INT := 0;
     SAFETY_RUN     : INT := 1;
+
+    (* Sweep state word values (SWEEP_STATE / %QW108). *)
+    SWEEP_IDLE     : INT := 0;
+    SWEEP_RUNNING  : INT := 1;
+    SWEEP_COMPLETE : INT := 2;
+
+    (* Sweep guard rails (defense-in-depth; the dashboard and /api/command clamp
+       too). SWEEP_START_RPM is clamped into [SWEEP_FLOOR_RPM .. SWEEP_MAX_RPM];
+       the measured sim floor is ~4004 RPM (clutch-limited) so 4000 is the lowest
+       meaningful start. SWEEP_MAX caps at the limiter. STEP_MIN guarantees the
+       target advances (a 0 step would hang the state machine); DWELL_MIN
+       guarantees forward progress on the dwell timer. *)
+    SWEEP_FLOOR_RPM    : REAL := 4000.0;
+    SWEEP_MAX_RPM      : REAL := 6100.0;
+    SWEEP_STEP_MIN     : REAL := 50.0;
+    SWEEP_DWELL_MIN_MS : REAL := 100.0;
 END_VAR
 
 (* --------------------------------------------------------------------
@@ -117,10 +142,19 @@ VAR
     iTargetRpmRaw    AT %QW101 : INT;   (* 40002 RPM, 1:1 (operator setpoint) *)
     iControlMode     AT %QW102 : INT;   (* 40003 mode (operator) *)
     iSafetyEnable    AT %QW103 : INT;   (* 40004 run/stop (operator; PLC may force 0) *)
+
+    (* Sweep params (operator-set via :502) + sweep status word (PLC output).
+       Located in %QW but NOT in the slave-device sim mirror; served by OpenPLC's
+       built-in :502 server. SWEEP_DWELL fits INT (contract caps it at 30000 ms). *)
+    iSweepStartRaw   AT %QW104 : INT;   (* 40005 RPM (operator) *)
+    iSweepEndRaw     AT %QW105 : INT;   (* 40006 RPM (operator) *)
+    iSweepStepRaw    AT %QW106 : INT;   (* 40007 RPM/step (operator) *)
+    iSweepDwellRaw   AT %QW107 : INT;   (* 40008 ms/step (operator) *)
+    iSweepState      AT %QW108 : INT;   (* 40009 0 idle/1 run/2 done (PLC output) *)
 END_VAR
 
 (* --------------------------------------------------------------------
-   ENGINEERING VALUES + PID / SAFETY STATE
+   ENGINEERING VALUES + PID / SAFETY / SWEEP STATE
    -------------------------------------------------------------------- *)
 VAR
     (* Scaled-to-engineering process values *)
@@ -130,6 +164,8 @@ VAR
     rHeadTempC    : REAL := 0.0;   (* degC *)
 
     (* PID working set *)
+    rEffectiveSetpoint : REAL := 0.0; (* SP fed to the PID: TARGET_RPM (PID) or
+                                         the stepped target (SWEEP) *)
     rError        : REAL := 0.0;   (* RPM; sense = PV - SP (see WHY below) *)
     rIntegral     : REAL := 0.0;   (* accumulated error*dt *)
     rMeasDeriv    : REAL := 0.0;   (* d(PV)/dt -> derivative on measurement *)
@@ -141,9 +177,18 @@ VAR
     bSafetyEnabled : BOOL := FALSE;  (* operator run command, normalized *)
     bFaultActive   : BOOL := FALSE;  (* any hard-fault condition THIS scan *)
     bFaultLatched  : BOOL := FALSE;  (* latched until fault clears + operator re-arms *)
-    bPidActive     : BOOL := FALSE;  (* closed loop running this scan *)
+    bPidActive     : BOOL := FALSE;  (* closed loop running this scan (PID or sweep) *)
     bPidActivePrev : BOOL := FALSE;  (* for disabled->enabled edge detection *)
     bOutputSaturated : BOOL := FALSE;
+
+    (* Sweep supervisor state *)
+    rSweepStart        : REAL := 0.0;   (* clamped start RPM (latched at entry) *)
+    rSweepEnd          : REAL := 0.0;   (* clamped end RPM *)
+    rSweepStep         : REAL := 0.0;   (* clamped step RPM *)
+    rSweepDwellMs      : REAL := 0.0;   (* clamped dwell, ms *)
+    rSweepTarget       : REAL := 0.0;   (* current step's target RPM *)
+    rSweepDwellElapsed : REAL := 0.0;   (* ms dwelled at this step (scan-counted) *)
+    bSweepActivePrev   : BOOL := FALSE; (* sweeping last scan? -> entry-edge detect *)
 END_VAR
 
 (* ====================================================================
@@ -189,24 +234,30 @@ IF bFaultLatched THEN
     rIntegral     := 0.0;             (* prevent windup while tripped *)
     bPidActive    := FALSE;
     rLastActualRpm := rActualRpm;     (* keep derivative continuous on recovery *)
+    bSweepActivePrev := FALSE;        (* a fault aborts any sweep in progress *)
 
 ELSIF NOT bSafetyEnabled THEN
     (* OPERATOR STOP (software e-stop): valve closed, integrator reset, but
-       NOT latched - operator can re-run immediately by setting SAFETY_ENABLE=1. *)
+       NOT latched - operator can re-run immediately by setting SAFETY_ENABLE=1.
+       This is also how Stop / E-stop ends a sweep mid-run. *)
     iValveCmdRaw  := VALVE_REG_MIN;
     rValveCmdPct  := VALVE_MIN_PCT;
     rIntegral     := 0.0;
     bPidActive    := FALSE;
     rLastActualRpm := rActualRpm;
+    bSweepActivePrev := FALSE;
 
 ELSE
     (* ================================================================
        STEP 3 - MODE GATING + CONTROL
-       PID closes the loop only in PID mode while enabled and not faulted.
-       (No ENGINE_ENABLE register in this contract: SAFETY_ENABLE = master
-        run/stop, CONTROL_MODE selects how the valve is driven.)
+       A closed loop runs in PID mode (1) and SWEEP mode (2). SWEEP is a
+       SUPERVISOR that steps an internal setpoint and reuses the SAME PID to
+       hold each step - it does NOT reimplement valve control. MANUAL (0)
+       passes the operator valve command straight through.
+       (No ENGINE_ENABLE register: SAFETY_ENABLE = master run/stop,
+        CONTROL_MODE selects how the valve is driven.)
        ================================================================ *)
-    bPidActive := (iControlMode = MODE_PID);
+    bPidActive := (iControlMode = MODE_PID) OR (iControlMode = MODE_SWEEP);
 
     (* Bumpless-ish start: on the disabled->enabled (or mode-entry) edge,
        zero the integrator and seed the derivative so we don't kick. *)
@@ -220,59 +271,119 @@ ELSE
               Keep the integrator cleared so re-entering PID is bumpless. *)
             rIntegral := 0.0;
             rValveCmdPct := INT_TO_REAL(iValveCmdRaw) / VALVE_SCALE;
+            bSweepActivePrev := FALSE;
 
-        1: (* PID HOLD - drive the valve to hold rTargetRpm *)
+        1: (* PID HOLD - hold the operator setpoint TARGET_RPM. *)
+            rEffectiveSetpoint := rTargetRpm;
+            bSweepActivePrev := FALSE;
 
-            (* WHY error = PV - SP (not the usual SP - PV): the valve is a
-               BRAKE. Raising it lowers RPM, so the loop is reverse-acting.
-               Using (actual - target) keeps all gains POSITIVE: actual too
-               high -> error>0 -> more valve -> more braking -> slows down. *)
-            rError := rActualRpm - rTargetRpm;
+        2: (* SWEEP - stepped acceleration sweep, supervising the PID. Steps an
+              internal target from SWEEP_START_RPM up to SWEEP_END_RPM in
+              SWEEP_STEP_RPM increments, dwelling SWEEP_DWELL_MS at each step.
+              The shared PID below holds each step. The dwell is counted off the
+              PLC scan (DT_S), NEVER wall-clock, because the runtime is only
+              soft-real-time. *)
 
-            (* Derivative ON MEASUREMENT, not on error: differentiate the PV so
-               a step change in TARGET_RPM does not produce a derivative kick. *)
-            rMeasDeriv := (rActualRpm - rLastActualRpm) / DT_S;
+            (* Entry edge: first sweep scan since (re)enable. Latch the operator
+               params (clamped) and arm the state machine. *)
+            IF NOT bSweepActivePrev THEN
+                rSweepStart   := INT_TO_REAL(iSweepStartRaw);
+                rSweepEnd     := INT_TO_REAL(iSweepEndRaw);
+                rSweepStep    := INT_TO_REAL(iSweepStepRaw);
+                rSweepDwellMs := INT_TO_REAL(iSweepDwellRaw);
 
-            (* Provisional output using the EXISTING integral (anti-windup
-               decides below whether to accumulate this scan). *)
-            rOutputPct := (KP * rError) + (KI * rIntegral) + (KD * rMeasDeriv);
+                IF rSweepStart < SWEEP_FLOOR_RPM THEN rSweepStart := SWEEP_FLOOR_RPM; END_IF;
+                IF rSweepStart > SWEEP_MAX_RPM   THEN rSweepStart := SWEEP_MAX_RPM;   END_IF;
+                IF rSweepEnd   > SWEEP_MAX_RPM   THEN rSweepEnd   := SWEEP_MAX_RPM;   END_IF;
+                IF rSweepEnd   < rSweepStart     THEN rSweepEnd   := rSweepStart;     END_IF;
+                IF rSweepStep  < SWEEP_STEP_MIN  THEN rSweepStep  := SWEEP_STEP_MIN;  END_IF;
+                IF rSweepDwellMs < SWEEP_DWELL_MIN_MS THEN rSweepDwellMs := SWEEP_DWELL_MIN_MS; END_IF;
 
-            (* ANTI-WINDUP via conditional integration: integrate normally in
-               the linear region; while saturated, only integrate in the
-               direction that pulls the output back out of saturation. *)
-            IF (rOutputPct > VALVE_MIN_PCT) AND (rOutputPct < VALVE_MAX_PCT) THEN
-                rIntegral := rIntegral + (rError * DT_S);
-            ELSIF (rOutputPct >= VALVE_MAX_PCT) AND (rError < 0.0) THEN
-                rIntegral := rIntegral + (rError * DT_S);   (* unwind from high stop *)
-            ELSIF (rOutputPct <= VALVE_MIN_PCT) AND (rError > 0.0) THEN
-                rIntegral := rIntegral + (rError * DT_S);   (* unwind from low stop *)
+                rSweepTarget       := rSweepStart;
+                rSweepDwellElapsed := 0.0;
+                iSweepState        := SWEEP_RUNNING;
             END_IF;
 
-            (* Recompute with the possibly-updated integral. *)
-            rOutputPct := (KP * rError) + (KI * rIntegral) + (KD * rMeasDeriv);
-            rValveCmdPct := rOutputPct;
+            (* Dwell timer: accumulate scan time at the current step. *)
+            rSweepDwellElapsed := rSweepDwellElapsed + (DT_S * 1000.0);
 
-        2: (* SWEEP - ramp the setpoint across an RPM band and log torque vs RPM.
-              Not implemented this session. Fall back to manual pass-through so
-              behavior is defined and never auto-commands an unsafe valve move. *)
-            rIntegral := 0.0;
-            rValveCmdPct := INT_TO_REAL(iValveCmdRaw) / VALVE_SCALE;
-            (* TODO: implement sweep schedule (ramp rTargetRpm over time) then
-               reuse the mode-1 PID to track it. *)
+            IF rSweepDwellElapsed >= rSweepDwellMs THEN
+                IF rSweepTarget >= rSweepEnd THEN
+                    (* FINAL step's dwell done. End the sweep ourselves: this is
+                       the ONLY place the control logic ends a run on its own and
+                       NOT on a fault. Mark complete, drop the run command so the
+                       engine coasts down (the safe end state), and command zero
+                       brake this scan. The dashboard polls SWEEP_STATE=2 to
+                       auto-close the run row. *)
+                    iSweepState    := SWEEP_COMPLETE;
+                    iSafetyEnable  := SAFETY_STOP;
+                    bSafetyEnabled := FALSE;
+                    iValveCmdRaw   := VALVE_REG_MIN;
+                    rValveCmdPct   := VALVE_MIN_PCT;
+                    rIntegral      := 0.0;
+                    bPidActive     := FALSE;   (* skip PID + output scaling this scan *)
+                ELSE
+                    (* Advance to the next step and restart the dwell timer. *)
+                    rSweepTarget := rSweepTarget + rSweepStep;
+                    IF rSweepTarget > rSweepEnd THEN rSweepTarget := rSweepEnd; END_IF;
+                    rSweepDwellElapsed := 0.0;
+                END_IF;
+            END_IF;
+
+            rEffectiveSetpoint := rSweepTarget;
+            bSweepActivePrev := bPidActive;   (* TRUE unless we just completed *)
 
     ELSE
         (* Unknown mode: safest defined behavior is operator pass-through. *)
         rIntegral := 0.0;
         rValveCmdPct := INT_TO_REAL(iValveCmdRaw) / VALVE_SCALE;
+        bSweepActivePrev := FALSE;
     END_CASE;
+
+    (* ----------------------------------------------------------------
+       SHARED PID - runs for PID hold (mode 1) and for each sweep step
+       (mode 2). Drives the valve to hold rEffectiveSetpoint. Skipped when a
+       sweep just completed (bPidActive was cleared above).
+       ---------------------------------------------------------------- *)
+    IF bPidActive THEN
+        (* WHY error = PV - SP (not the usual SP - PV): the valve is a BRAKE.
+           Raising it lowers RPM, so the loop is reverse-acting. Using
+           (actual - target) keeps all gains POSITIVE: actual too high ->
+           error>0 -> more valve -> more braking -> slows down. *)
+        rError := rActualRpm - rEffectiveSetpoint;
+
+        (* Derivative ON MEASUREMENT, not on error: differentiate the PV so a
+           step change in the setpoint produces no derivative kick. This matters
+           at every sweep step boundary too. *)
+        rMeasDeriv := (rActualRpm - rLastActualRpm) / DT_S;
+
+        (* Provisional output using the EXISTING integral (anti-windup decides
+           below whether to accumulate this scan). *)
+        rOutputPct := (KP * rError) + (KI * rIntegral) + (KD * rMeasDeriv);
+
+        (* ANTI-WINDUP via conditional integration: integrate normally in the
+           linear region; while saturated, only integrate in the direction that
+           pulls the output back out of saturation. *)
+        IF (rOutputPct > VALVE_MIN_PCT) AND (rOutputPct < VALVE_MAX_PCT) THEN
+            rIntegral := rIntegral + (rError * DT_S);
+        ELSIF (rOutputPct >= VALVE_MAX_PCT) AND (rError < 0.0) THEN
+            rIntegral := rIntegral + (rError * DT_S);   (* unwind from high stop *)
+        ELSIF (rOutputPct <= VALVE_MIN_PCT) AND (rError > 0.0) THEN
+            rIntegral := rIntegral + (rError * DT_S);   (* unwind from low stop *)
+        END_IF;
+
+        (* Recompute with the possibly-updated integral. *)
+        rOutputPct := (KP * rError) + (KI * rIntegral) + (KD * rMeasDeriv);
+        rValveCmdPct := rOutputPct;
+    END_IF;
 
     rLastActualRpm := rActualRpm;   (* store PV for next scan's derivative *)
 END_IF;
 
 (* ====================================================================
-   STEP 4 - OUTPUT CLAMP + SCALE TO WIRE (skipped when faulted/stopped:
-   those branches already wrote a safe 0). Hard clamp is the last line of
-   defense regardless of how rValveCmdPct was produced.
+   STEP 4 - OUTPUT CLAMP + SCALE TO WIRE (skipped when faulted/stopped, or
+   when a sweep just completed: those branches already wrote a safe 0). Hard
+   clamp is the last line of defense regardless of how rValveCmdPct was made.
    ==================================================================== *)
 IF bPidActive OR (iControlMode = MODE_MANUAL) THEN
 
