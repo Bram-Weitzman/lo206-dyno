@@ -58,7 +58,7 @@ function isProvided(v: unknown): boolean {
   return v !== undefined && v !== null && Number.isFinite(Number(v));
 }
 
-type Action = "start" | "stop" | "estop" | "start_sweep";
+type Action = "start" | "stop" | "estop" | "start_sweep" | "set_target";
 
 interface Readback {
   target_rpm: number;
@@ -117,6 +117,7 @@ export async function GET() {
 
 // POST /api/command
 //   { action: "start", target?: number }  -> PID hold; writes TARGET_RPM if given
+//   { action: "set_target", target }      -> mid-run PID target update; writes ONLY %QW101
 //   { action: "start_sweep", start, end, step, dwell }
 //   { action: "stop" | "estop" }
 export async function POST(req: NextRequest) {
@@ -139,17 +140,28 @@ export async function POST(req: NextRequest) {
     action !== "start" &&
     action !== "stop" &&
     action !== "estop" &&
-    action !== "start_sweep"
+    action !== "start_sweep" &&
+    action !== "set_target"
   ) {
     return NextResponse.json(
-      { error: 'action must be "start", "stop", "estop", or "start_sweep"' },
+      { error: 'action must be "start", "stop", "estop", "start_sweep", or "set_target"' },
+      { status: 400 },
+    );
+  }
+
+  // set_target requires a target; for start it's optional (falls back to
+  // whatever is already in %QW101 from a previous run).
+  if (action === "set_target" && !isProvided(body.target)) {
+    return NextResponse.json(
+      { error: '"set_target" requires a numeric "target"' },
       { status: 400 },
     );
   }
 
   // PID target: only write %QW101 when the caller supplies one (otherwise leave
   // the operator's last value in place). Server-side clamp to the usable band.
-  const writePidTarget = action === "start" && isProvided(body.target);
+  const writePidTarget =
+    (action === "start" && isProvided(body.target)) || action === "set_target";
   const pidTarget = clampInt(body.target, PID_TARGET.lo, PID_TARGET.hi, PID_TARGET.dflt);
 
   // Clamp sweep params up-front (server-side enforcement of the contract).
@@ -171,6 +183,13 @@ export async function POST(req: NextRequest) {
         }
         await client.writeRegister(ADDR_CONTROL_MODE, MODE_PID);
         await client.writeRegister(ADDR_SAFETY_ENABLE, SAFETY_RUN);
+      } else if (action === "set_target") {
+        // Mid-run target update. Write ONLY %QW101 — do NOT touch CONTROL_MODE
+        // or SAFETY_ENABLE; the existing PID loop reads %QW101 every scan and
+        // will track the new setpoint without re-arming. Per register_map.md
+        // (TARGET_RPM mode-scoped ownership), the operator owns this register
+        // in PID mode, so this is within the contract.
+        await client.writeRegister(ADDR_TARGET_RPM, pidTarget);
       } else if (action === "start_sweep") {
         // Write the four sweep params, then mode=SWEEP, then enable. The PLC
         // latches the (clamped) params on the sweep entry edge and steps the
