@@ -44,10 +44,18 @@ const SWEEP_LIMITS = {
   dwell: { lo: 500, hi: 30000, dflt: 2000 },
 };
 
+// PID hold target band. Floor ~3135 RPM is brake-capacity-limited (clutch
+// removed, see CLAUDE.md); 3200 keeps the first hold above it. 6100 = limiter.
+const PID_TARGET = { lo: 3200, hi: 6100, dflt: 4000 };
+
 function clampInt(v: unknown, lo: number, hi: number, dflt: number): number {
   const n = Math.round(Number(v));
   if (!Number.isFinite(n)) return dflt;
   return Math.min(hi, Math.max(lo, n));
+}
+
+function isProvided(v: unknown): boolean {
+  return v !== undefined && v !== null && Number.isFinite(Number(v));
 }
 
 type Action = "start" | "stop" | "estop" | "start_sweep";
@@ -107,10 +115,14 @@ export async function GET() {
   }
 }
 
-// POST /api/command  { action: "start" | "stop" | "estop" | "start_sweep", ... }
+// POST /api/command
+//   { action: "start", target?: number }  -> PID hold; writes TARGET_RPM if given
+//   { action: "start_sweep", start, end, step, dwell }
+//   { action: "stop" | "estop" }
 export async function POST(req: NextRequest) {
   let body: {
     action?: string;
+    target?: unknown;
     start?: unknown;
     end?: unknown;
     step?: unknown;
@@ -135,6 +147,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // PID target: only write %QW101 when the caller supplies one (otherwise leave
+  // the operator's last value in place). Server-side clamp to the usable band.
+  const writePidTarget = action === "start" && isProvided(body.target);
+  const pidTarget = clampInt(body.target, PID_TARGET.lo, PID_TARGET.hi, PID_TARGET.dflt);
+
   // Clamp sweep params up-front (server-side enforcement of the contract).
   const sweepStart = clampInt(body.start, SWEEP_LIMITS.start.lo, SWEEP_LIMITS.start.hi, SWEEP_LIMITS.start.dflt);
   let sweepEnd = clampInt(body.end, SWEEP_LIMITS.end.lo, SWEEP_LIMITS.end.hi, SWEEP_LIMITS.end.dflt);
@@ -145,8 +162,13 @@ export async function POST(req: NextRequest) {
   try {
     const rb = await withClient(async (client) => {
       if (action === "start") {
-        // Enable in PID hold. Mode before enable so a mode is selected the
-        // instant SAFETY_ENABLE latches.
+        // Enable in PID hold. Write the operator's TARGET_RPM (if supplied)
+        // BEFORE mode/enable so the loop holds the chosen RPM, not a stale
+        // register value. Mode before enable so a mode is selected the instant
+        // SAFETY_ENABLE latches.
+        if (writePidTarget) {
+          await client.writeRegister(ADDR_TARGET_RPM, pidTarget);
+        }
         await client.writeRegister(ADDR_CONTROL_MODE, MODE_PID);
         await client.writeRegister(ADDR_SAFETY_ENABLE, SAFETY_RUN);
       } else if (action === "start_sweep") {
