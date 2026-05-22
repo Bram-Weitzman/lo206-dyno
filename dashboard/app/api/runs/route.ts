@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { NextRequest, NextResponse } from "next/server";
+import { db, dbWrite, nowIso } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,4 +18,27 @@ export async function GET() {
     )
     .all();
   return NextResponse.json(rows);
+}
+
+// POST /api/runs
+// Create (open) a new test run. The dashboard is the SOLE creator of run rows;
+// the logger attaches to whatever run is currently open. Body: optional { notes }.
+export async function POST(req: NextRequest) {
+  let notes: string | null = null;
+  try {
+    const body = await req.json();
+    if (body && typeof body.notes === "string") notes = body.notes;
+  } catch {
+    // empty / non-JSON body is fine -- notes is optional
+  }
+
+  const started_at = nowIso();
+  const info = dbWrite()
+    .prepare("INSERT INTO test_runs (started_at, notes) VALUES (?, ?)")
+    .run(started_at, notes);
+
+  return NextResponse.json(
+    { id: Number(info.lastInsertRowid), started_at, ended_at: null, notes },
+    { status: 201 },
+  );
 }

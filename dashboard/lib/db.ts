@@ -16,7 +16,10 @@ export const SAMPLE_COLS =
 
 // Cache the connection across dev hot-reloads (module re-eval) and across
 // requests in production.
-const g = globalThis as unknown as { __dynoDb?: Database.Database };
+const g = globalThis as unknown as {
+  __dynoDb?: Database.Database;
+  __dynoDbWrite?: Database.Database;
+};
 
 export function db(): Database.Database {
   if (!g.__dynoDb) {
@@ -31,4 +34,25 @@ export function db(): Database.Database {
     g.__dynoDb = conn;
   }
   return g.__dynoDb;
+}
+
+// Writable connection -- used ONLY for the test_runs lifecycle (open a run on
+// "start", stamp ended_at on "end run"). The dashboard is the sole creator and
+// closer of run rows; the logger only attaches to an open run and writes
+// samples. Telemetry stays read-only via db().
+export function dbWrite(): Database.Database {
+  if (!g.__dynoDbWrite) {
+    const conn = new Database(DB_PATH, { fileMustExist: true });
+    // The logger commits samples ~10x/s from another process; wait on a
+    // momentary write lock instead of throwing SQLITE_BUSY.
+    conn.pragma("busy_timeout = 3000");
+    g.__dynoDbWrite = conn;
+  }
+  return g.__dynoDbWrite;
+}
+
+// ISO-8601 UTC, millisecond precision, +00:00 offset -- matches the timestamps
+// the logger writes (Python isoformat) so run and sample rows sort consistently.
+export function nowIso(): string {
+  return new Date().toISOString().replace("Z", "+00:00");
 }

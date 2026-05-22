@@ -53,18 +53,25 @@ def log(msg: str) -> None:
 def init_db(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
+    # The dashboard writes test_runs from another process; wait briefly on a
+    # momentary write lock rather than erroring out on SQLITE_BUSY.
+    conn.execute("PRAGMA busy_timeout = 3000")
     conn.executescript(SCHEMA_PATH.read_text())
     conn.commit()
     return conn
 
 
-def start_run(conn: sqlite3.Connection, notes: str | None) -> int:
-    cur = conn.execute(
-        "INSERT INTO test_runs (started_at, notes) VALUES (?, ?)",
-        (utc_now_iso(), notes),
-    )
-    conn.commit()
-    return cur.lastrowid
+def newest_open_run(conn: sqlite3.Connection) -> int | None:
+    """ID of the newest run the dashboard has opened and not yet ended.
+
+    The dashboard is the sole creator/closer of test_runs rows; the logger only
+    reads this to learn which run to attach its samples to.
+    """
+    row = conn.execute(
+        "SELECT id FROM test_runs WHERE ended_at IS NULL "
+        "ORDER BY started_at DESC, id DESC LIMIT 1"
+    ).fetchone()
+    return row[0] if row else None
 
 
 def compute_hp(torque_x10: int, rpm: int) -> float:
@@ -81,15 +88,16 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=5020, help="Modbus TCP port")
     parser.add_argument("--interval", type=int, default=100, help="Poll interval in ms")
     parser.add_argument("--db", default="data/dyno.db", help="Path to SQLite file")
-    parser.add_argument("--notes", default=None, help="Optional note attached to this test run")
+    # --notes is accepted for CLI/start_all.sh compatibility but is now a no-op:
+    # the dashboard owns run metadata (it creates the test_runs row, notes and all).
+    parser.add_argument("--notes", default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     interval_s = args.interval / 1000.0
     db_path = Path(args.db)
 
     conn = init_db(db_path)
-    run_id = start_run(conn, args.notes)
-    log(f"Run #{run_id} started. Logging to {db_path} at {args.interval}ms")
+    log(f"Logging to {db_path} at {args.interval}ms.")
 
     client = ModbusTcpClient(args.host, port=args.port)
     client.connect()
@@ -101,8 +109,15 @@ def main() -> int:
 
     signal.signal(signal.SIGINT, handle_sigint)
 
+    # Run lifecycle is owned by the dashboard: it INSERTs a test_runs row on
+    # "start" and stamps ended_at on "end run". The logger no longer creates or
+    # closes runs -- it polls for the newest open run, attaches samples to it,
+    # and returns to waiting when that run is closed (no restart needed).
+    run_id = None
     sample_count = 0
     last_status = 0.0
+    last_run_check = -1e9    # force an immediate run check on the first iteration
+    last_waiting_log = -1e9  # force an immediate "waiting" log if no run is open
     next_tick = time.monotonic()
 
     insert_sql = (
@@ -113,6 +128,34 @@ def main() -> int:
 
     try:
         while not stop["flag"]:
+            now = time.monotonic()
+
+            # Attach to whichever run the dashboard currently has open. Re-check
+            # ~1x/s (and immediately while unattached) so we notice the run being
+            # closed and the next run opened without needing a restart.
+            if run_id is None or now - last_run_check >= 1.0:
+                last_run_check = now
+                open_id = newest_open_run(conn)
+                if open_id != run_id:
+                    if open_id is None:
+                        log(f"Run #{run_id} closed ({sample_count} samples). "
+                            f"Waiting for an open run.")
+                    else:
+                        if run_id is not None:
+                            log(f"Run #{run_id} closed ({sample_count} samples).")
+                        sample_count = 0
+                        last_status = 0.0
+                        log(f"Attached to open run #{open_id}.")
+                    run_id = open_id
+
+            if run_id is None:
+                if now - last_waiting_log >= 15.0:
+                    last_waiting_log = now
+                    log("Waiting for an open run.")
+                time.sleep(0.5)
+                next_tick = time.monotonic()
+                continue
+
             next_tick += interval_s
 
             try:
@@ -185,9 +228,13 @@ def main() -> int:
                 next_tick = time.monotonic()
 
     finally:
-        conn.execute("UPDATE test_runs SET ended_at = ? WHERE id = ?", (utc_now_iso(), run_id))
-        conn.commit()
-        log(f"Run #{run_id} ended. {sample_count} samples written.")
+        # The logger does NOT close runs -- the dashboard owns ended_at. Just
+        # release resources; the open run (if any) stays open for the next logger.
+        if run_id is not None:
+            log(f"Logger stopping while attached to run #{run_id} "
+                f"({sample_count} samples this run).")
+        else:
+            log("Logger stopping (no run attached).")
         conn.close()
         client.close()
 
