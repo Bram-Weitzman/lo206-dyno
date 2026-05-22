@@ -54,6 +54,46 @@ directly in manual mode). The simulator treats all four as read-only inputs.
 
 ---
 
+## Sweep Registers (MODE_SWEEP) — operator params + PLC status
+
+These registers drive the stepped acceleration sweep (CONTROL_MODE = 2). They
+live in the PLC's `%QW` space and are exposed to the dashboard by OpenPLC's
+built-in Modbus server on **:502**. Unlike 40001-40004 they are **NOT mirrored
+to the simulator** — the sim does not model the sweep, so they stay on the
+PLC ↔ dashboard (:502) side only and `simulator/modbus_map.py` is unchanged.
+
+| Address | %QW    | Name            | Type   | Range       | Owner    | Meaning |
+|---------|--------|-----------------|--------|-------------|----------|---------|
+| 40005   | %QW104 | SWEEP_START_RPM | uint16 | 4000 - 6100 | operator | First step's target RPM. Lower bound clamped to the measured sim floor (~4000); default 4200 (clutch lockup — below it torque readings are clutch-slip-contaminated). |
+| 40006   | %QW105 | SWEEP_END_RPM   | uint16 | 4000 - 6100 | operator | Top of the sweep band; the sweep ends after the step at/above this completes. Capped at 6100 (limiter). |
+| 40007   | %QW106 | SWEEP_STEP_RPM  | uint16 | 100 - 1000  | operator | RPM increment per step (typical 200-400). |
+| 40008   | %QW107 | SWEEP_DWELL_MS  | uint16 | 500 - 60000 | operator | Time held at each step (ms) so the load cell gets a clean torque reading. Counted off the PLC scan, not wall-clock. |
+| 40009   | %QW108 | SWEEP_STATE     | uint16 | 0 - 2       | PLC      | 0 = idle, 1 = running, 2 = complete. PLC-written; the dashboard polls it to show progress and auto-close the run on completion. |
+
+### Notes
+- **CONTROL_MODE = 2 activates these.** The sweep is a SUPERVISOR over the
+  mode-1 PID: it steps an internal setpoint from SWEEP_START_RPM toward
+  SWEEP_END_RPM by SWEEP_STEP_RPM, dwelling SWEEP_DWELL_MS at each step, and
+  reuses the existing PID to hold each step. It does not reimplement valve
+  control.
+- **Self-terminating.** When the final step's dwell completes, the PLC sets
+  SWEEP_STATE = 2 and writes SAFETY_ENABLE = 0 itself — the engine disables and
+  coasts down. This is the only place the control logic ends a run on its own
+  (not on a fault).
+- **SWEEP_STATE is a PLC output (`%QW108`), not an input register.** OpenPLC
+  input registers (`%IW`) are sourced from the slave device (sim / field I/O)
+  and cannot be written by the control program, so a PLC-computed status word
+  must live in `%QW`. The dashboard reads it from :502 the same way it reads the
+  command read-back.
+- **Slave-device (sim mirror) config is unchanged.** Because the sweep registers
+  are not mirrored to the sim, the OpenPLC slave-device Input-Register (size 7)
+  and Holding-Write (size 4) blocks stay as they were; only the built-in :502
+  server's exposed `%QW` range grows to include 104-108. (`simulator/modbus_map.py`
+  therefore does not change for the sweep — these registers are not part of the
+  sim's Modbus interface.)
+
+---
+
 ## Input Registers — simulator writes, PLC reads
 
 These carry sensed values *from* the engine/load model *to* the controller.
@@ -142,6 +182,8 @@ trust the status word alone).
 |--------------------|----------------|----------------------------|--------|
 | Valve command      | 40001          | PLC (operator in manual)   | Sim/HW |
 | Operator commands  | 40002 - 40004  | Operator (HMI / dashboard) | PLC    |
+| Sweep params       | 40005 - 40008  | Operator (dashboard)       | PLC (not sim) |
+| Sweep status       | 40009          | PLC                        | Dashboard |
 | Telemetry (in)     | 30001 - 30008  | Sim/HW                     | PLC    |
 
 Any change to address, scaling, range, or ownership above is a **contract

@@ -333,6 +333,16 @@ in the web UI after a fresh OpenPLC install):** Protocol TCP, IP 127.0.0.1, Port
 **5020**, Slave ID **1**, Input Registers start 0 size **7** (`%IW100..106`),
 Holding Registers-Write start 0 size **4** (`%QW100..103`), Holding-Read size 0.
 
+**Sweep registers (MODE_SWEEP, added 2026-05-22):** the four sweep parameter
+registers (%QW104-107 = 40005-40008) and the sweep status word (%QW108 = 40009)
+are NOT part of this slave-device mirror -- the sim does not model the sweep, so
+the Input-Register (size 7) and Holding-Write (size 4) blocks above are
+UNCHANGED. OpenPLC built-in Modbus server on :502 exposes these located %QW
+automatically (holding registers 104-108), which is how the dashboard writes the
+params and reads SWEEP_STATE. NOTE this deviates from the session brief, which
+expected the slave sizes to grow: they do not, because nothing about the sweep
+crosses the PLC-to-sim boundary. See plc/register_map.md (Sweep Registers).
+
 **Open architectural gap (Issue #3):** there is no software start/throttle command
 path. The engine can be enabled today only by a manual write to OpenPLC port 502
 (or a hardwired operator panel on the real rig). The dashboard is a read-only
