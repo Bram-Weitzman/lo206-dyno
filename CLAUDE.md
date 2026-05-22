@@ -182,6 +182,71 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
+### Session 2026-05-22 — Issue #3: dashboard operator command path (partially closed)
+
+The dashboard now has its first WRITE path. Issue #3 (no software start/throttle
+path; engine could only be enabled by a manual `pymodbus` poke to OpenPLC :502)
+is **partially closed**:
+
+- **Write route `dashboard/app/api/command/route.ts`** — POST `{action}` where
+  action is `start` | `stop` | `estop`. Writes operator commands to **OpenPLC
+  :502** (the PLC's `%QW` image), never to the sim on :5020. `start` writes
+  CONTROL_MODE=PID then SAFETY_ENABLE=1 (TARGET_RPM left as-is — sweep params are
+  Session C); `stop`/`estop` write SAFETY_ENABLE=0. The route is the ONLY place
+  the dashboard opens Modbus (per-request connection, closed in `finally`), has
+  NO sim-vs-real branching, and returns the post-write read-back of TARGET_RPM /
+  CONTROL_MODE / SAFETY_ENABLE. Uses the `modbus-serial` npm package (added this
+  session). E-stop deliberately does NOT write the valve: the PLC interlock
+  already forces VALVE_POSITION_CMD=0 on SAFETY_ENABLE=0 (verified end-to-end —
+  `%QW100` read back 0 after stop/e-stop).
+- **Run lifecycle moved from logger to dashboard.** The dashboard is now the
+  SOLE creator/closer of `test_runs` rows: POST `/api/runs` opens a run, PATCH
+  `/api/run/[id]` stamps `ended_at`. The logger (`logger/logger.py`) no longer
+  INSERTs a run or UPDATEs `ended_at` — it polls for the newest open run, attaches
+  samples to it, logs "Waiting for an open run" while none exists, and returns to
+  waiting when the run closes (no restart needed). This removes the split-brain
+  `run_id` failure mode from the earlier ops sessions: exactly ONE writer of run
+  rows. The logger `--notes` flag is now a no-op (kept for start_all.sh / CLI
+  compat); run notes are owned by the dashboard.
+- **UI controls** (`dashboard/components/OperatorControls.tsx`, "use client"):
+  Start (opens a run + enables engine), End Run (closes the run; does NOT stop
+  the engine), Stop (SAFETY_ENABLE=0), and a large red always-visible Emergency
+  Stop (immediate, no confirm). Start is disabled while a run is open; End Run is
+  disabled while none is. Each command shows the `/api/command` read-back. Ending
+  a run and stopping the engine are independently triggerable.
+- **register_map.md ownership table corrected** — TARGET_RPM / CONTROL_MODE /
+  SAFETY_ENABLE are now documented as OPERATOR inputs (the PLC consumes them);
+  only VALVE_POSITION_CMD is PLC-written (operator-written in manual mode). This
+  matches `dyno_control.st`'s header, which was already authoritative.
+
+**Verified end-to-end from a REMOTE browser** (http://10.20.99.55:3000 from the
+operator PC, not curl-from-VM — the cross-origin reload-storm class of bug is
+invisible to localhost). After `./stop_all.sh && ./start_all.sh` the logger came
+up "Waiting for an open run"; Start created run #9, the logger attached and
+telemetry populated (PID holding ~5000 RPM, status dot green); End Run stamped
+`ended_at` and the logger returned to waiting; Stop and E-stop both read back
+SAFETY_ENABLE=0 and the sim went to STATUS=0. Network tab showed a steady
+`/api/live` + `/api/runs` poll with NO `GET /` reload storm — the
+`allowedDevOrigins` fix from the prior session is holding. Engine left STOPPED.
+
+**What remains (NOT closed by this session):**
+- **Sweep mode** is still a stub in `dyno_control.st` and there is no UI/route
+  for sweep parameters (start/stop band, ramp rate, TARGET_RPM entry). That is
+  **Session C**. `start` currently always uses CONTROL_MODE=PID with whatever
+  TARGET_RPM is already in the register.
+- Minor UI nuance (pre-existing, not introduced here): `/api/live` returns the
+  last sample of the newest run even when that run is closed, so when no run is
+  open the telemetry cards show the last-known (frozen) values rather than going
+  blank. The operator-controls panel correctly shows "No run open". Worth a
+  follow-up if it confuses operators.
+
+**REAL-HARDWARE WARNING:** the dashboard Emergency Stop is a **convenience
+control, NOT a safety device.** It issues the same software SAFETY_ENABLE=0
+write as Stop and depends on the dashboard, network, OpenPLC, and the field bus
+all being healthy. The real rig MUST have a **physically wired E-stop that breaks
+the enable/power circuit** independently of any software — the on-screen button
+sits beside it, it does not replace it.
+
 Last worked on: 2026-05-21 — end-to-end integration validated. Simulator, PLC
 control logic, SQLite logger, and Next.js dashboard are all complete, committed,
 and verified together. Next.js bumped 14.2 -> 16.2 / React 18 -> 19 to clear 4
