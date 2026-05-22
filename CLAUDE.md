@@ -12,14 +12,15 @@ entire control system can be validated before any hardware is bought.
 **Current phase: hardware procurement.**
 
 The full software stack is complete and verified end-to-end on dyno-dev:
-- Simulator: DynoEngine class, clutch model, RPM noise model, 14/14 tests passing
+- Simulator: DynoEngine class (clutch model bypassed 2026-05-22 — see below), RPM noise model, 15/15 tests passing
 - PLC control logic: PID hold, manual, sweep modes; safety interlocks
 - Logger: Modbus TCP → SQLite at ~100 ms poll rate
 - Dashboard: Next.js, live chart (RPM/torque/HP), run history, CSV export —
   verified 2026-05-21 with PLC holding 5000 RPM in PID mode
-- Outstanding software issue: below 3,400 RPM the clutch disengages but
-  pressure and CHT still compute from raw pump load (one-line fix, low
-  priority — see Known open questions)
+- Clutch model REMOVED from the physics loop (2026-05-22): the bench dyno
+  measures the engine directly across the full rev range. New brake-capacity
+  floor ~3,135 RPM (was clutch-limited ~4,200). This also resolved the old
+  below-engagement pressure/CHT inconsistency.
 - Hardware: procurement in progress — proportional valve now confirmed
   (see docs/bom.md); all other hardware TBD
 
@@ -112,10 +113,10 @@ must be changed *first*, deliberately, before either side.
 - **Dashboard data path**: RESOLVED — the logger polls Modbus TCP and writes
   SQLite (`data/dyno.db`); the dashboard reads that SQLite DB. Verified
   end-to-end 2026-05-21.
-- **Clutch model pressure/CHT scope** (known issue, low priority): below
-  CLUTCH_ENGAGEMENT_RPM (3,400) the clutch is disengaged from engine
-  acceleration, but hydraulic pressure and CHT still compute from the raw
-  (un-clutched) pump load. One-line fix; deferred. Surfaced 2026-05-21.
+- **Clutch model pressure/CHT scope** (RESOLVED 2026-05-22): fixed by removing
+  the clutch from the physics loop entirely (see Current session state). With the
+  clutch gone, torque, pressure and CHT all compute from the same (full) pump
+  load — the old below-engagement inconsistency is gone.
 
 ## Real-world calibration data
 
@@ -132,6 +133,12 @@ the control system.
   operator is ready to load the pump
 
 ### Clutch engagement profile (Hilliard Inferno Flame, stock config)
+> **REFRAMED 2026-05-22:** the clutch model was removed from the dyno's engine
+> physics (the bench dyno measures the engine directly). The numbers below are
+> REAL measured drivetrain reference data — hard-won from race logs and the
+> Hilliard spring chart — and are RETAINED as such. They no longer drive the sim
+> engine model, but remain the reference for future clutch work (e.g. the
+> load-profile run mode, GitHub issue #8) and for tuning a real clutch.
 - Spring config: 2 black + 2 white springs, 0 heavy weights per shoe
 - First engagement RPM: **~3,400 RPM** (confirmed — matches Hilliard spring
   chart spec, validated against race data cursor reading of 3,537 RPM at
@@ -158,8 +165,10 @@ the control system.
 ### Calibrated sim constants (applied)
 The following constants are confirmed from real-world data and have been
 applied to the simulator. IDLE_RPM, RPM_NOISE_BAND, and OVERPRESSURE_TRIP_PSI
-were applied in the prior code session; the clutch constants are now wired into
-the physics loop via clutch_torque_fraction() (this session).
+were applied in the prior code session. The clutch constants
+(CLUTCH_ENGAGEMENT_RPM, CLUTCH_LOCKUP_RPM) are RETAINED in engine_sim.py as
+validated reference data but are NO LONGER wired into the physics loop — the
+clutch was bypassed 2026-05-22 so the dyno measures the engine directly.
 Note: `OVERPRESSURE_TRIP_PSI` lives in `simulator/modbus_map.py`, not `engine_sim.py`.
 The real simulator API uses `set_engine_enable()` and valve positions as 0–100 (int),
 not `set_safety_enable()` or 0.0–1.0 floats — use the correct API when applying these.
@@ -167,8 +176,8 @@ not `set_safety_enable()` or 0.0–1.0 floats — use the correct API when apply
 ```python
 # engine_sim.py
 IDLE_RPM = 2400               # APPLIED -- warm idle, measured from race data
-CLUTCH_ENGAGEMENT_RPM = 3400  # APPLIED -- confirmed vs. spring chart and race data
-CLUTCH_LOCKUP_RPM = 4200      # APPLIED -- estimated under pump load; validate on real hardware
+CLUTCH_ENGAGEMENT_RPM = 3400  # RETAINED reference -- bypassed from physics 2026-05-22
+CLUTCH_LOCKUP_RPM = 4200      # RETAINED reference -- bypassed from physics 2026-05-22
 RPM_NOISE_BAND = 100          # APPLIED -- +/-RPM noise on output only, steady state from race data
 
 # simulator/modbus_map.py
@@ -181,6 +190,80 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 **Confirm/replace** these if a different identity should own the commits.
 
 ## Current session state
+
+### Session 2026-05-22 (Session C) — MODE_SWEEP implemented + clutch removed
+
+**Issue #3 is now FULLY CLOSED.** The sweep half is done: MODE_SWEEP is
+implemented in `plc/dyno_control.st` and verified end-to-end from a remote
+browser.
+
+- **MODE_SWEEP (CONTROL_MODE=2)** — a SUPERVISOR over the mode-1 PID. Steps an
+  internal setpoint from SWEEP_START_RPM to SWEEP_END_RPM by SWEEP_STEP_RPM,
+  dwelling SWEEP_DWELL_MS (counted off the PLC scan, NOT wall-clock) at each
+  step, reusing the PID to hold each step. At the final step's dwell it sets
+  SWEEP_STATE=2 and drops SAFETY_ENABLE itself — the first time the control
+  logic ends a run on its own, not on a fault. The safety interlock stays fully
+  live throughout (overspeed/overpressure/CHT trips all active during sweep).
+- **Sweep registers** (`plc/register_map.md`): SWEEP_START_RPM %QW104/40005,
+  SWEEP_END_RPM %QW105/40006, SWEEP_STEP_RPM %QW106/40007, SWEEP_DWELL_MS
+  %QW107/40008 (operator inputs); SWEEP_STATE %QW108/40009 (PLC output, dashboard
+  reads). They live in the PLC %QW space exposed by OpenPLC's built-in :502
+  server; they are **NOT mirrored to the sim**, so the OpenPLC slave-device
+  config and `simulator/modbus_map.py` are UNCHANGED. SWEEP_STATE is a %QW (PLC
+  output), not an input register, because OpenPLC input registers come from the
+  slave device and cannot be written by the program.
+- **SWEEP_DWELL_MS capped 500–30000 ms** — the PLC reads it as a signed 16-bit
+  INT (max 32767).
+- **Dashboard**: `/api/command` gained a `start_sweep` action + a GET to poll
+  SWEEP_STATE (still the SOLE Modbus path; server-side clamps to the contract
+  ranges). `OperatorControls` has a Sweep panel (start/end/step inputs + a
+  dwell-per-step slider) that auto-closes the run when SWEEP_STATE hits 2.
+- **Verified from a remote browser** (not curl): sweep 3200→6100 / step 400 /
+  dwell 2000 created run #11, stepped RPM 4030→6036 with a real torque curve
+  logged (9.2→5.0 ft-lbs across the band), SWEEP_STATE 1→2, the PLC dropped
+  SAFETY_ENABLE, and the dashboard auto-closed the run. Stop mid-sweep ends it
+  cleanly and leaves the run OPEN (run lifecycle stays independent of engine
+  enable).
+
+**Clutch model REMOVED from the physics loop.** A bench dyno must measure the
+engine across the FULL rev range; the clutch imposed a ~4,200 RPM lockup floor,
+blinding the dyno in exactly the range a clutch change would affect. `tick()`
+now couples the pump brake directly (no `clutch_torque_fraction()` multiplier).
+The clutch fn + CLUTCH_* constants are RETAINED as validated drivetrain
+reference data (see "Clutch engagement profile"). Removing it also resolved the
+old below-engagement pressure/CHT inconsistency (torque, pressure, CHT now all
+use the same full pump load).
+
+- **New floor (re-probed)**: full throttle, valve 100% → RPM settles at **~3,135
+  RPM**, set by brake capacity vs the engine torque curve (was clutch-limited
+  ~4,004). SWEEP_FLOOR_RPM clamp lowered 4000→2500; SWEEP_START_RPM range
+  2500–6100; dashboard default start 3200 (just above the floor).
+
+**Sim-fidelity gap (still open):** the sim does NOT model the return-line
+back-pressure valve's brake-torque contribution — `BACKPRESSURE_BASELINE_PSI`
+only floors the reported pressure telemetry, not the braking force. So the sim
+floor (~3,135) and the real-hardware floor will DIFFER: the real back-pressure
+valve adds brake torque and should pull the real floor lower. SWEEP_START_RPM is
+operator-settable precisely so the real floor can be found empirically on
+hardware without recompiling the PLC.
+
+**Deferred (filed):** GitHub issue #8 — "Load-profile run mode" (simulate kart
+launch load instead of RPM-hold), on the project board Backlog. A separate,
+substantial control mode; not part of sweep work.
+
+**Minor known limitations (not blocking):** during a sweep the logged
+`rpm_setpoint` (TARGET_RPM / %QW101) reads 0 and the dashboard sweep panel's
+"target" readout likewise — the sweep's internal stepping target is not mirrored
+to that register, so only the ACHIEVED RPM (not the commanded step target) is
+logged/charted. Cosmetic/observability only; the RPM trace shows the steps.
+
+**Real hardware:** sweep parameters that work in the sim are FIRST GUESSES — real
+engine inertia and valve lag change the dwell needed for a clean torque reading;
+the dwell slider exists so this is tunable on the real rig without recompiling
+the PLC. The dashboard E-stop remains a CONVENIENCE control, NOT a safety device
+— the real rig needs a physically wired E-stop breaking the enable circuit.
+
+---
 
 ### Session 2026-05-22 — Issue #3: dashboard operator command path (partially closed)
 
