@@ -41,7 +41,14 @@ directly in manual mode). The simulator treats all four as read-only inputs.
   holding register the PLC *computes*. Scaled x100 so the controller can command
   0.01% resolution without floats on the wire. The sim applies valve *lag*
   before this becomes the actual position (see 30005).
-- **40002 TARGET_RPM** — operator setpoint; only meaningful in modes 1 and 2.
+- **40002 TARGET_RPM** — the speed setpoint, with **mode-scoped ownership**:
+  - In **PID mode (1)** the OPERATOR owns it (set via the HMI / dashboard); the
+    PLC reads it and holds it.
+  - In **SWEEP mode (2)** the PLC sweep logic owns it: on entry and at each step
+    it writes the current internal stepping target here, OVERWRITING any operator
+    value. This is a documented hand-off, NOT a conflict — it exposes the live
+    sweep target on :502 so the dashboard setpoint line tracks the staircase and
+    the logger records it.
   Capped at 6500 to stay below the safety RPM limit.
 - **40003 CONTROL_MODE** — operator-selected. Manual passes VALVE_POSITION_CMD
   straight through; PID hold drives the valve to hold TARGET_RPM; sweep ramps
@@ -180,11 +187,12 @@ trust the status word alone).
 
 | Direction          | Registers      | Writer                     | Reader |
 |--------------------|----------------|----------------------------|--------|
-| Valve command      | 40001          | PLC (operator in manual)   | Sim/HW |
-| Operator commands  | 40002 - 40004  | Operator (HMI / dashboard) | PLC    |
-| Sweep params       | 40005 - 40008  | Operator (dashboard)       | PLC (not sim) |
-| Sweep status       | 40009          | PLC                        | Dashboard |
-| Telemetry (in)     | 30001 - 30008  | Sim/HW                     | PLC    |
+| Valve command      | 40001          | PLC (operator in manual)        | Sim/HW |
+| Target RPM         | 40002          | Operator in PID; PLC in SWEEP    | PLC    |
+| Mode / enable      | 40003 - 40004  | Operator (HMI / dashboard)      | PLC    |
+| Sweep params       | 40005 - 40008  | Operator (dashboard)            | PLC (not sim) |
+| Sweep status       | 40009          | PLC                             | Dashboard |
+| Telemetry (in)     | 30001 - 30008  | Sim/HW                          | PLC    |
 
 Any change to address, scaling, range, or ownership above is a **contract
 change**: update this file and `simulator/modbus_map.py` first, then update both
