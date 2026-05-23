@@ -151,16 +151,17 @@ must be changed *first*, deliberately, before either side.
   the clutch from the physics loop entirely (see Current session state). With the
   clutch gone, torque, pressure and CHT all compute from the same (full) pump
   load — the old below-engagement inconsistency is gone.
-- **Dashboard run-state computed in 3 places (tech debt)**: "is a run
-  active" is derived independently by three views in `OperatorControls.tsx`
-  with three different definitions — top-right `LiveStatus` keys off
-  `sim_status` (engine running?), the operator bar keys off `openRun` (test_run
-  row open?), and `manualLocked` now keys off `runOpen && control_mode !== 0 &&
-  safety_enable === 1` (automated loop actively armed?). The last three
-  diagnostic sessions (blank tiles on a closed run, missing throttle path,
-  manual-panel stuck-locked after Stop) were all symptoms of these three
-  views disagreeing about "is a run active". Consolidating into one shared
-  derived run-state hook is **post-interview debt — do not refactor now**.
+- **Dashboard run-state computed in 3 places (RESOLVED 2026-05-23)**: "is a
+  run active / what mode / what phase" used to be derived independently by
+  three views in `OperatorControls.tsx` with three different definitions
+  (top-right indicator off `sim_status`; operator bar off `openRun`;
+  `manualLocked` off raw `readback`), which let views disagree about run
+  state. **Now consolidated** into a single `useRunState()` hook
+  (`dashboard/hooks/useRunState.ts`) that owns all polling and exposes one
+  normalized `phase` + `lockReason`; every consumer renders from it. Bugs A,
+  B (stale/contradictory displays) and D (manual-lock stuck after Stop) are
+  fixed at the architectural root. See Current session state for the matrix
+  verification.
 
 ## Real-world calibration data
 
@@ -248,7 +249,59 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-### Session 2026-05-23 (newest) -- Manual panel lock released when automated loop is safed off
+### Session 2026-05-23 (newest) -- Run-state consolidated into one useRunState() hook
+
+The Tier-2 architectural fix for the diagnosed run-state defect: "is a run
+active / what mode / what phase" was being derived independently in 3+ places
+in `OperatorControls.tsx` from unsynchronized sources, producing contradictory
+displays (bugs A, B, D). **Dashboard-only change — no PLC, physics, or
+run-lifecycle semantics touched.**
+
+**What changed:**
+- New `dashboard/hooks/useRunState.ts` owns ALL run-state polling
+  (`/api/runs` 1500ms, `/api/command` 1000ms, `/api/live` 500ms — same
+  cadences as before) and exposes ONE normalized object:
+  `{ phase, openRun, readback, live, lockReason, ... }`. `phase` is a single
+  enum (`idle | pid-armed | pid-stopped-open | manual-armed |
+  manual-stopped-open | sweep-armed | sweep-complete-open`) derived from
+  `openRun + control_mode + safety_enable + sweep_state` (derivation table in
+  the hook header).
+- A SINGLE hook instance lives in `app/page.tsx` and is threaded into
+  `OperatorControls` as a prop, so the top-right indicator, telemetry tiles,
+  live chart, operator bar, and PID/sweep badges all read from one source and
+  can no longer disagree. `OperatorControls` keeps only form-input + UI state
+  (target/sweep params, busy/status/error) — no run-state polling or types.
+- `manualLocked` is now `lockReason != null`, where `lockReason` is derived
+  from the normalized `phase` (non-null only in a `*-armed` phase), NOT from
+  raw `readback`. This is the architectural version of the `26ad22e` lock fix:
+  the lock can no longer freeze on a stale readback (bug D fixed at root).
+- **Stale-readback race fixed (`323e9c8`):** the hook now gates the exposed
+  readback on `openRun` (`visibleReadback = openRun ? readback : null`).
+  Without this, a `postCommand` (E-Stop/Stop) resolving just as a sweep
+  auto-closed the run re-populated readback with no open run, showing
+  "No run open" + "sweep complete" together. Caught by the matrix (row 14).
+
+**Matrix verification (commit `8246565`):** the full 15-step transition matrix
+was re-run in a REAL remote browser (Chrome → `http://10.20.99.55:3000`, sim +
+logger + OpenPLC live). For every step the operator bar, top-right indicator,
+manual-lock state, and tiles AGREE about run/mode/phase. **Zero contradictory
+rows.** Specifically confirmed: "No run open" never co-occurs with a sweep
+segment; a PID/Manual run never shows a sweep segment (row 9 confirms this even
+while the raw PLC SWEEP_STATE register is still 2); the manual panel is enabled
+after Stop/E-Stop and locked only in a `*-armed` phase; no `[object Object]`.
+
+**Deferred / out of scope (unchanged):**
+- The **PLC-side SWEEP_STATE register is still not reset** on entry to
+  non-sweep modes. The dashboard no longer surfaces it as run phase (the
+  phase-derived badges ignore it), but the raw readback dump line still shows
+  the register value, and resetting it PLC-side remains separate, low-priority
+  cleanup.
+- Manual-throttle coil does not latch while `mode=PID` (the PLC owns the coil
+  in PID mode) — pre-existing, PLC-side.
+- Bugs E/F/G remain deferred as previously logged (no resume button, no
+  `set_valve` behavior change).
+
+### Session 2026-05-23 -- Manual panel lock released when automated loop is safed off
 
 Fixed a UX defect that left the Manual/Diagnostics panel disabled after Stop
 even though the engine was no longer being driven by any automated loop.
