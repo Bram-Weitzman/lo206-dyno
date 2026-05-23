@@ -114,6 +114,12 @@ must be changed *first*, deliberately, before either side.
 
 ## Known open questions
 
+- **Engine throttle**: a **BINARY throttle** (idle/WOT) is implemented (THROTTLE
+  coil, 2026-05-23) — enough to bring RPM down off-throttle and start a sweep from
+  a defined condition. **Proportional throttle and the full two-axis
+  (throttle × brake) operating-point mapping are POST-INTERVIEW work**; the binary
+  throttle is a precursor, not a replacement. The coastdown friction constants are
+  sim estimates pending a real engine coastdown test.
 - **Proportional valve**: TYPE LOCKED — an electro-proportional **THROTTLE
   cartridge valve (non-compensated)**, **rated ~30 GPM** for the verified 8–19.4
   GPM window (re-spec'd 2026-05-23; was ~3–6 GPM). Candidate families Sun FPFK /
@@ -860,7 +866,12 @@ Then enable via the port-502 writes above.
 **OpenPLC slave-device config (runtime config — NOT version controlled; re-enter
 in the web UI after a fresh OpenPLC install):** Protocol TCP, IP 127.0.0.1, Port
 **5020**, Slave ID **1**, Input Registers start 0 size **7** (`%IW100..106`),
-Holding Registers-Write start 0 size **4** (`%QW100..103`), Holding-Read size 0.
+Holding Registers-Write start 0 size **4** (`%QW100..103`), Holding-Read size 0,
+**Coils-Write start 0 size 1** (added 2026-05-23 for the throttle: maps `%QX100.0`
+→ sim coil 0; on :502 this is coil address 800). Without this Coils block the
+throttle never reaches the sim and the engine sits at idle (makes no torque) in
+PID/sweep. (Set on this VM via `mbconfig.cfg` `device0.Coils_Size="1"` + the
+`Slave_dev.coil_size=1` row in `openplc.db`, then recompile/restart the PLC.)
 
 **Sweep registers (MODE_SWEEP, added 2026-05-22):** the four sweep parameter
 registers (%QW104-107 = 40005-40008) and the sweep status word (%QW108 = 40009)
