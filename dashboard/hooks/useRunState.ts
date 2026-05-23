@@ -246,13 +246,24 @@ export function useRunState(): RunState {
     return { ...open, ended_at: data.ended_at } as RunRow;
   }, [openRun, refreshOpenRun]);
 
-  const phase = derivePhase(openRun, readback);
+  // Enforce the core invariant structurally: when no run is open, readback is
+  // ABSENT to every consumer — regardless of a late postCommand response that
+  // set it after the run closed. This race happens when a sweep auto-completes
+  // (run closes → openRun null → the poll effect clears readback) at the same
+  // instant the operator hits E-Stop/Stop: that command's postCommand resolves
+  // afterward and calls setReadback(rb), re-populating readback with no open
+  // run. The poll effect only clears readback on an openRun *change*, so it
+  // never fires again. Gating here makes "openRun null ⇒ readback null" hold no
+  // matter how the raw state got set, killing the "No run open + sweep complete"
+  // contradiction at the source.
+  const visibleReadback = openRun ? readback : null;
+  const phase = derivePhase(openRun, visibleReadback);
   const lockReason = deriveLockReason(phase);
 
   return {
     phase,
     openRun,
-    readback,
+    readback: visibleReadback,
     live,
     lockReason,
     sweepActive,
