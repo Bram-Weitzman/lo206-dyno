@@ -99,7 +99,7 @@ must be changed *first*, deliberately, before either side.
   card), both specced in `docs/bom.md` — pick one before ordering.
 - **Engine inertia / valve lag constants**: placeholders in `engine_sim.py`;
   need real values once we can bench-measure the engine and valve.
-- **Torque curve fidelity**: we currently use published B&S Black Slide data.
+- **Torque curve fidelity**: we currently use published B&S 206 Racing data for the Stock/Unrestricted 206 slide (#555590, commonly called the black slide).
   Other slide configs are not yet digitized (see `docs/bom.md`).
 - **Safety thresholds**: RPM > 6500 remains a first-guess — confirm against
   engine builder recommendations once on real hardware. PSI software trip:

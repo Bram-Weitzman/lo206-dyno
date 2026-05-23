@@ -375,7 +375,7 @@ class DynoEngine:
         return self._limiter_active
 
 
-# OBSERVED VALUES (smoke test, Black Slide .520, 50% valve, J=0.05, gain=12.0):
+# OBSERVED VALUES (smoke test, OLD restricted-slide curve, 50% valve, J=0.05, gain=12.0):
 #   - Standalone settling (4 s @ 50% valve): rpm ~5392, torque ~5.64 ft-lbs,
 #     valve_act 50.0%, psi ~309, cht ~33 C, status running.
 #   - Live Modbus TCP (2 s after enable @ 50%): rpm 4863, torque 6.80 ft-lbs

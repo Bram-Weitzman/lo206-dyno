@@ -5,24 +5,24 @@
 The LO206 uses interchangeable carburetor slides/restrictors (referred to by
 color and opening size) to set the power level for different racing classes. The
 simulator's torque curve (`simulator/torque_curve.py`) currently models the
-**Black Slide (.520 opening)** — the unrestricted club/senior setup — using
-digitized B&S dyno sheet data. This curve peaks near 9.8 ft-lbs around 3500 RPM,
+**Stock/Unrestricted 206 slide (#555590, black slide)** — the unrestricted club/senior setup — using
+digitized B&S dyno sheet data. This curve makes strong low-end torque (~11.1 ft-lbs at 2500-3000 RPM) and HP rises across the band toward the top,
 consistent with the project's ~10 ft-lbs / 8.8 HP hardware target.
 
-### Black Slide (.520 opening) — digitized, in use by the sim
+### Stock/Unrestricted 206 slide (#555590, black slide) — digitized, in use by the sim
 
 | RPM  | Torque (ft-lbs) |
 |------|-----------------|
-| 2500 | 9.06            |
-| 3000 | 9.39            |
+| 2500 | 11.13            |
+| 3000 | 11.12            |
 | 3500 | 9.83            |
-| 4000 | 9.18            |
-| 4500 | 7.38            |
-| 5000 | 6.62            |
-| 5500 | 5.37            |
-| 6000 | 4.96            |
+| 4000 | 9.76            |
+| 4500 | 9.09            |
+| 5000 | 9.45            |
+| 5500 | 9.45            |
+| 6000 | 7.52            |
 
-### Black Slide (.440 opening) — alternate (restricted senior), not in use
+### Restricted .440 slide — alternate (restricted senior), not in use
 
 Retained for reference; this was the originally-scaffolded curve. Swap it back
 into `torque_curve.py` to model the .440 restriction.
@@ -49,7 +49,7 @@ into `torque_curve.py` to model the .440 restriction.
 | Yellow | restricted / junior     | TODO: digitize from official B&S sheet |
 | Stock  | baseline                | TODO: digitize from official B&S sheet |
 
-> TODO: The torque/HP figures for the non-Black slides are not yet digitized.
+> TODO: The torque/HP figures for the other restricted slides are not yet digitized.
 > Pull them from the official Briggs & Stratton LO206 dyno sheets rather than
 > estimating — class legality depends on accurate numbers. The class/usage
 > notes above are approximate and also need confirmation.

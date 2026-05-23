@@ -10,7 +10,7 @@ control program can connect to it exactly as it will connect to real hardware.
 | File                 | Role                                               |
 |----------------------|----------------------------------------------------|
 | `modbus_map.py`      | Register contract as named constants (single source of truth) |
-| `torque_curve.py`    | LO206 Black Slide (.520) torque lookup + interpolation |
+| `torque_curve.py`    | LO206 Stock/Unrestricted 206 (#555590) torque lookup + interpolation |
 | `engine_sim.py`      | I/O-agnostic engine + hydraulic-brake physics model |
 | `modbus_server.py`   | pymodbus async TCP server mapping the model to registers |
 | `tests/`             | pytest suite                                       |
@@ -63,7 +63,7 @@ pytest -v
 
 Implemented and smoke-tested end to end over Modbus TCP:
 
-- `torque_curve.py` — Black Slide (.520) data + numpy interpolation, with
+- `torque_curve.py` — Stock/Unrestricted 206 (#555590) data + numpy interpolation, with
   zero-below-2000 / hold-above-6100 clamps.
 - `engine_sim.py` — engine inertia (J=0.05 kg.m^2), hydraulic pump load
   (gain 12 ft-lbs), first-order valve lag (tau=120 ms), CHT thermal model, and
