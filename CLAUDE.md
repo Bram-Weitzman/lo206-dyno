@@ -34,11 +34,15 @@ The full software stack is complete and verified end-to-end on dyno-dev:
   Candidate: Dalton Hydraulic. (Was: 1.52 cu.in. Princess Auto 8375446 — dropped.)
 - **Drive:** **22T engine / 64T pump gear set = 2.909:1 reduction.** Engine 2500 RPM
   → pump 859 RPM; engine 6100 → pump 2097 RPM. (Was: #219 chain 20T/70T 3.5:1 — dropped.)
-- **Brake valve:** proportional **pressure/throttle control valve (NON-compensated)** —
-  builds back-pressure by restricting pump-outlet flow. Sun **FPCH**-class or Brand
-  **EFC**-class, rated flow ~3–6 GPM, pressure ≥3000 PSI. **NOT** a pressure-compensated
-  flow-control valve (that holds flow constant and would fight the brake — wrong part).
-  (Was: Sun RPGC-LBN proportional pressure-relief — dropped.)
+- **Brake valve:** electro-proportional **THROTTLE cartridge valve (NON-compensated)** —
+  builds back-pressure by restricting pump-outlet flow. **Rated ~30 GPM** so the
+  8–19.4 GPM window sits in the accurate mid-range; pressure ≥3000 PSI; **likely
+  pilot-operated** at this size (needs minimum pilot/supply pressure, adds slight
+  lag). Candidate families: Sun **FPFK**-class, **HydraForce**, or **Bosch Rexroth**
+  electro-proportional cartridges. **NOT** a pressure-compensated flow-control valve
+  (that holds flow constant and would fight the brake — wrong part). (Was: ~3–6 GPM
+  Sun FPCH/Brand EFC sizing, re-spec'd 2026-05-23 for the corrected flow; originally
+  Sun RPGC-LBN pressure-relief — both dropped.)
 - **Three-tier pressure scheme:** **working ~1128 PSI / mechanical relief ~2000 PSI /
   pump rating 3000 PSI.** Worked point: absorbing the engine's ~11 ft-lb low-end
   torque needs ~32 ft-lb (384 in-lb) at the pump shaft (×2.909) = ~1128 PSI (~38% of
@@ -48,8 +52,10 @@ The full software stack is complete and verified end-to-end on dyno-dev:
   0.8–2.0 GPM figure was wrong by ~10× (a 0.214-vs-2.14 cu in/rev displacement slip)
   and is fully superseded. This 8–19.4 GPM window is what the valve / relief /
   reservoir / plumbing are sized for (see `docs/bom.md`).
-- **Coil drive: TBD** — 12 V PWM vs 0–10 V amp card. Valve TYPE is locked; coil drive
-  is NOT chosen this session.
+- **Coil drive: TBD (recommendation recorded).** Prefer a **current-controlled
+  proportional amplifier card with adjustable dither (~100–250 Hz)** — carried as
+  its own BOM line item — over raw PWM from the Pi (a ~30 GPM proportional cartridge
+  wants stable dithered coil current). Valve TYPE is locked; coil drive NOT finalized.
 - **Pressure transducer range** widened to **0–3000 PSI** (was 0–1500) for this scheme;
   `PSI_REG_MAX` in `modbus_map.py` bumped 1500→3000 (behavior-neutral under current trips).
 - **Brake-capacity floor (new model):** torque-balance floor **~2510 RPM** (with trips
@@ -108,12 +114,14 @@ must be changed *first*, deliberately, before either side.
 
 ## Known open questions
 
-- **Proportional valve**: TYPE LOCKED (2026-05-22) — a proportional
-  **pressure/throttle control valve (non-compensated)**, Sun FPCH-class or Brand
-  EFC-class (NOT a pressure-compensated flow-control valve, and no longer the Sun
-  RPGC-LBN). Full spec + VERIFY-before-purchase list in `docs/bom.md`. **Coil
-  drive still TBD: 12 V PWM vs 0–10 V amp card — not picked this session.** Exact
-  part number + rated flow also TBD (tied to the pump-flow inconsistency below).
+- **Proportional valve**: TYPE LOCKED — an electro-proportional **THROTTLE
+  cartridge valve (non-compensated)**, **rated ~30 GPM** for the verified 8–19.4
+  GPM window (re-spec'd 2026-05-23; was ~3–6 GPM). Candidate families Sun FPFK /
+  HydraForce / Bosch Rexroth; **likely pilot-operated** at this size. NOT a
+  pressure-compensated flow-control valve, and no longer the Sun RPGC-LBN. Full
+  spec + VERIFY-before-purchase list in `docs/bom.md`. **Coil drive still TBD —
+  recommendation recorded: a current-controlled proportional amplifier card with
+  dither, over raw Pi PWM.** Exact part number + amplifier selection still TBD.
 - **Engine inertia / valve lag constants**: placeholders in `engine_sim.py`;
   need real values once we can bench-measure the engine and valve.
 - **Torque curve fidelity**: we currently use published B&S 206 Racing data for the Stock/Unrestricted 206 slide (#555590, commonly called the black slide).
@@ -224,7 +232,52 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-### Session 2026-05-23 (newest) -- Brake hardware locked + sim brake model re-derived
+### Session 2026-05-23 (newest) -- Pump flow corrected (10x) + valve/circuit re-spec'd
+
+A focused **flow correction**. The prior session had flagged the pump flow as
+~10× too low; this session confirmed and fixed it, then re-spec'd the
+flow-dependent hardware. **Docs + one sim comment only — no PID retune, no
+safety-trip change, no verification sweep, coil drive still not finalized.**
+
+- **Corrected flow window: 8.0 GPM at 2500 engine RPM → 19.4 GPM at 6100**
+  (Q = 2.14 cu in/rev × pump_rpm / 231, pump_rpm = engine_rpm / 2.909). The old
+  0.8–2.0 GPM figure was wrong by ~10× — a 0.214-vs-2.14 cu in/rev displacement
+  slip — and is fully superseded.
+- **Torque/pressure math UNCHANGED.** It has no flow term: the ~1128 PSI working
+  point, 2.14 cu in/rev displacement, 3000 PSI rating, and the three-tier
+  1128/2000/3000 scheme all still stand. Pump displacement, gear ratio, PID gains,
+  and the safety trips were NOT touched.
+- **Valve re-spec'd** (commit `d30178c`): from a ~3–6 GPM valve to a **~30 GPM
+  electro-proportional THROTTLE cartridge** (non-compensated), so the 8–19.4 GPM
+  window sits in the accurate mid-range (bottom two-thirds of rated flow). Candidate
+  families Sun **FPFK** / **HydraForce** / **Bosch Rexroth**. **Likely
+  PILOT-OPERATED** at this flow size (minimum pilot/supply pressure, slight added
+  lag) — the sim's 50–200 ms valve-lag model already covers a plausible range.
+- **Coil drive still TBD**, but the **recommendation is recorded**: a
+  current-controlled proportional **amplifier card with adjustable dither
+  (~100–250 Hz)**, as its own BOM line item, over raw Pi PWM. Not finalized.
+- **Flow-dependent circuit sized for 8–19 GPM:** system relief **≥20 GPM** / ~2000
+  PSI; **multi-gallon reservoir** (~5–10 gal) with an **oil cooler likely needed**
+  for sustained sweeps (~5–6 HP dumped as heat); **#8/#10 plumbing** for ~19 GPM
+  peak (not #6).
+- **Size/weight + budget impact:** the 30 GPM valve + amplifier + ≥20 GPM relief +
+  multi-gallon reservoir + larger plumbing make the brake circuit the **size/weight
+  driver** of the build (matters for the transportable/trailer constraint) and
+  **likely push the build OVER the sub-$1000 CAD target** once priced (see
+  `docs/bom.md` Budget).
+- **Sim:** the brake model already derived flow correctly from displacement × RPM
+  (no stale flow constant); only a stale `VALVE_ORIFICE_K` comment was updated
+  (commit `be36b14`). 16/16 tests still pass, physics unchanged.
+
+**NEXT SESSION (unchanged by this flow correction):** PID retune for the new
+plant, review of `PSI_TRIP_PSI` (750) + `OVERPRESSURE_TRIP_PSI` (900) against the
+~2000 PSI relief, and the full verification sweep + HP-rise re-confirm (remote
+browser, not curl) all remain outstanding. This session changed circuit *sizing*,
+not the control loop or the plant physics.
+
+---
+
+### Session 2026-05-23 -- Brake hardware locked + sim brake model re-derived
 
 Locked two brake-hardware decisions and rebuilt the sim brake physics around
 them. This was a **docs + sim-model + contract** change only — **no PID retune,
