@@ -90,12 +90,12 @@ VALVE_ORIFICE_K = 17.8             # PSI / (GPM^2 * restriction_frac^2). Lumps t
                                    # pinned to the 1128 PSI @ valve100%/7.96 GPM worked point
                                    # (1128 / (1.0^2 * 7.96^2) = 17.8).
                                    # BENCH-MEASURE: the real restriction->pressure curve depends
-                                   # on the chosen valve's area-vs-command profile and on the
-                                   # actual pump flow (see the docs/bom.md flow-inconsistency
-                                   # flag -- 2.14 cu in/rev yields ~8-19 GPM, ~10x the brief's
-                                   # quoted 0.8-2.0 GPM; the formula here uses the displacement-
-                                   # consistent flow). Both exponents (restriction^2, flow^2) are
-                                   # the physically expected shape but are not yet fit to data.
+                                   # on the chosen valve's area-vs-command profile. The flow term
+                                   # is the VERIFIED operating window 8.0-19.4 GPM (8.0 at 2500
+                                   # engine RPM, 19.4 at 6100), computed below as 2.14*pump_rpm/231
+                                   # -- an earlier 0.8-2.0 GPM figure was wrong by ~10x and is
+                                   # superseded (see docs/bom.md). Both exponents (restriction^2,
+                                   # flow^2) are the physically expected shape but not yet fit to data.
 
 # Pre-derived: engine-shaft brake torque (ft-lb) per PSI of pump pressure.
 #   = PUMP_DISP_CUIN / (2*pi)  [in-lb/PSI at pump] / 12 [->ft-lb] / GEAR_RATIO [->crank]
