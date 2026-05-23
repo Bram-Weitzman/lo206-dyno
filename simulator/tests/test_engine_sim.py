@@ -9,7 +9,10 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import modbus_map as mb  # noqa: E402
-from engine_sim import DynoEngine, TAU_VALVE, clutch_torque_fraction  # noqa: E402
+from engine_sim import (  # noqa: E402
+    DynoEngine, TAU_VALVE, clutch_torque_fraction,
+    RPM_LIMITER, RPM_LIMITER_HYSTERESIS,
+)
 
 
 def test_valve_lag():
@@ -106,15 +109,59 @@ def test_pump_loads_engine_directly_no_clutch():
     assert sim._pump_load > 0.0        # pump is coupled and loading the engine
 
 
-def test_full_brake_floor_no_clutch():
-    """At full throttle with the valve at 100% the engine settles at the
-    brake-capacity floor (~3135 RPM), NOT the old clutch-lockup floor (~4200).
-    Confirms the dyno can now measure below 4200 RPM -- the whole point of
-    removing the clutch."""
+def test_full_brake_trips_overpressure_under_current_cap():
+    """Full throttle + valve 100% with the NEW physically-grounded brake model.
+
+    REPLACES the old ~3135 RPM brake-floor assertion. With the spec'd 2.14 cu
+    in/rev pump on the 2.909:1 gear set, full restriction develops well over
+    1000 PSI (the design working pressure is ~1128 PSI). The sim overpressure
+    trip is UNCHANGED this session (OVERPRESSURE_TRIP_PSI = 900), so the pump
+    crosses it almost immediately at full braking: the model latches a fault,
+    the interlock forces the valve shut, and with no brake the engine runs up to
+    the rev limiter. So there is NO low-RPM 'floor' under the current trip --
+    that is the point. The brake-capacity floor only becomes reachable once the
+    trips are raised to the new ~2000 PSI relief scheme (next session); see
+    test_brake_capacity_floor_with_trips_raised for the torque-balance floor.
+    """
     sim = DynoEngine()
     sim.set_engine_enable(True)
     sim.set_control_mode(0)
     sim.set_valve_position(100)
+    peak_dev_psi = 0.0
     for _ in range(2000):              # 20 s settle at 10 ms/step
         sim.tick(0.01)
-    assert 2900.0 < sim._rpm < 3400.0  # brake-capacity floor, below clutch lockup
+        peak_dev_psi = max(peak_dev_psi, sim._pressure_dev_psi)
+
+    # Developed pressure exceeded the (unchanged) sim overpressure trip...
+    assert peak_dev_psi > mb.OVERPRESSURE_TRIP_PSI
+    # ...so a fault latched and the engine ran up to the limiter rather than
+    # holding a low brake floor.
+    assert sim.fault is True
+    assert sim.get_status() == mb.STATUS_FAULT
+    assert sim._rpm > RPM_LIMITER - RPM_LIMITER_HYSTERESIS  # ran up, not braked down
+
+
+def test_brake_capacity_floor_with_trips_raised(monkeypatch):
+    """The TRUE torque-balance brake floor of the new model, with the pressure
+    trips conceptually raised (the next-session state).
+
+    With overpressure trips lifted, full throttle + valve 100% settles where the
+    pump brake torque equals the engine torque. The new model lands at ~2510 RPM
+    (developed pressure ~1140 PSI, brake torque ~11.1 ft-lb = engine torque at
+    the low end) -- lower than the old placeholder's ~3360 RPM because the spec'd
+    pump is far stronger. This pins the floor for next session's SWEEP_START_RPM
+    review. NOTE: this is the only test that touches the trips, and only via
+    monkeypatch (restored automatically); the committed trips are NOT changed.
+    """
+    monkeypatch.setattr(mb, "OVERPRESSURE_TRIP_PSI", 1.0e9)
+    monkeypatch.setattr(mb, "PSI_REG_MAX", 1.0e9)
+    sim = DynoEngine()
+    sim.set_engine_enable(True)
+    sim.set_control_mode(0)
+    sim.set_valve_position(100)
+    for _ in range(4000):              # 40 s settle at 10 ms/step
+        sim.tick(0.01)
+    assert sim.fault is False                  # trips raised: no fault
+    assert 2350.0 < sim._rpm < 2700.0          # torque-balance floor ~2510 RPM
+    # at the floor the brake torque matches the engine torque (within noise)
+    assert abs(sim._pump_load - sim.engine_torque()) < 0.5

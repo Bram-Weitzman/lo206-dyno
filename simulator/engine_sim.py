@@ -44,33 +44,63 @@ DT_DEFAULT = 0.010                 # s, 10 ms physics step (matches server loop)
 # with flywheel.
 J_ENGINE = 0.05                    # kg.m^2 rotational inertia
 
-# --- Hydraulic pump load model ---
-PUMP_LOAD_GAIN = 18.5              # Updated for confirmed hardware: 1.52 cu.in. gear pump,
-                                   # 2.1:1 belt reduction. Derivation: at peak torque
-                                   # (10 ft-lbs, 3,500 RPM), required pressure ~1,042 PSI.
-                                   # Gain scales valve position (0.0-1.0) to pump load torque
-                                   # in ft-lbs. With back-pressure baseline of 200 PSI,
-                                   # effective modulation range is 200-1,200 PSI across valve
-                                   # travel.
-                                   # TODO: calibrate against real hardware -- this remains a
-                                   # model estimate.
-MAX_PUMP_TORQUE = PUMP_LOAD_GAIN   # ft-lbs reference for pressure scaling
-MAX_PRESSURE_PSI = 700.0           # PSI at MAX_PUMP_TORQUE (proportional contribution; the
-                                   # total modeled pressure is BACKPRESSURE_BASELINE_PSI plus
-                                   # this proportional term, capped at OVERPRESSURE_TRIP_PSI)
-BACKPRESSURE_BASELINE_PSI = 200    # Return-line back-pressure valve, set ~200 PSI.
-                                   # NOTE: this baseline is applied ONLY to the reported hydraulic
-                                   # pressure telemetry (see tick step 4). It does NOT contribute to
-                                   # brake torque -- _compute_pump_load() is a pure function of valve
-                                   # position and RPM, so the back-pressure valve's real braking
-                                   # contribution is NOT modelled. The low-RPM floor (~4,004 RPM at
-                                   # PUMP_LOAD_GAIN=18.5) is therefore clutch-limited, not set by
-                                   # back-pressure; the real rig's floor will sit lower once this valve
-                                   # adds brake torque -- known sim-fidelity gap (see CLAUDE.md). Real
-                                   # hardware: Princess Auto Item 8688939, adjustable
-                                   # 50-3,000 PSI relief valve, $69.99 CAD.
-                                   # TODO: tune on real hardware -- 150-250 PSI is the
-                                   # expected range depending on desired low-RPM floor.
+# --- Hydraulic brake model (physically grounded from the spec'd hardware) ---
+# Re-derived 2026-05-22 from the locked brake hardware (docs/bom.md), replacing
+# the old linear PUMP_LOAD_GAIN placeholder (which was tuned to a 3.5:1 chain /
+# 1.52 cu.in. pump that is no longer the design). The chain of physics is:
+#
+#   pump_rpm        = engine_rpm / GEAR_RATIO
+#   pump_flow_gpm   = PUMP_DISP_CUIN * pump_rpm / 231          (231 cu in / gallon)
+#   pump_pressure   = orifice model of (valve restriction, flow)   [see below]
+#   pump_torque_inlb = pump_pressure * PUMP_DISP_CUIN / (2*pi)  (positive-disp pump)
+#   engine_brake_ftlb = (pump_torque_inlb / 12) / GEAR_RATIO    (reflected to crank)
+#
+# Torque -> pressure is SPEED-INDEPENDENT (a positive-displacement pump develops
+# torque = pressure * disp / 2pi regardless of RPM); only the FLOW varies with
+# RPM, which is what the orifice pressure model below keys off.
+GEAR_RATIO = 64.0 / 22.0           # = 2.909:1 reduction (22T engine gear / 64T pump gear).
+                                   # The pump is the SLOW, high-torque side: it spins at
+                                   # engine_rpm / GEAR_RATIO and develops GEAR_RATIO x the
+                                   # crank's reflected brake torque. Hence engine brake torque
+                                   # = pump_shaft_torque / GEAR_RATIO.
+                                   # NOTE: the session brief's prose said "engine = pump-shaft
+                                   # torque * 2.909", which is INVERTED relative to its OWN worked
+                                   # example (11 ft-lb engine <-> 32 ft-lb pump <-> 1128 PSI). This
+                                   # model is built to the physically correct direction (/GEAR_RATIO),
+                                   # which reproduces that worked point exactly.
+PUMP_DISP_CUIN = 2.14              # cu in/rev, fixed-displacement gear pump, 3000 PSI rated
+                                   # (docs/bom.md). VERIFY exact displacement before purchase.
+
+# Worked-point anchor (docs/bom.md): at FULL restriction (valve 100%) and the
+# engine's low end (~2500 RPM -> ~7.96 GPM pump flow), the non-compensated valve
+# develops ~1128 PSI, the pressure that absorbs the engine's ~11 ft-lb low-end
+# torque. That single anchor calibrates the lumped orifice constant below.
+#
+# Non-compensated proportional throttle/pressure valve: it builds back-pressure by
+# RESTRICTING outlet flow. Orifice pressure rises with FLOW (Q^2, classic orifice
+# dP ~ Q^2) and with CLOSURE (more command = smaller area = more restriction). We
+# lump area-vs-command into a simple restriction^2 term:
+#
+#   pump_pressure_psi = VALVE_ORIFICE_K * restriction_frac^2 * flow_gpm^2
+#
+# where restriction_frac = valve_act/100 in [0,1] (0 = open, 1 = full closure).
+VALVE_ORIFICE_K = 17.8             # PSI / (GPM^2 * restriction_frac^2). Lumps the orifice
+                                   # discharge coefficient, fluid density, and the valve's
+                                   # (unknown) flow-area-vs-command curve into one constant,
+                                   # pinned to the 1128 PSI @ valve100%/7.96 GPM worked point
+                                   # (1128 / (1.0^2 * 7.96^2) = 17.8).
+                                   # BENCH-MEASURE: the real restriction->pressure curve depends
+                                   # on the chosen valve's area-vs-command profile and on the
+                                   # actual pump flow (see the docs/bom.md flow-inconsistency
+                                   # flag -- 2.14 cu in/rev yields ~8-19 GPM, ~10x the brief's
+                                   # quoted 0.8-2.0 GPM; the formula here uses the displacement-
+                                   # consistent flow). Both exponents (restriction^2, flow^2) are
+                                   # the physically expected shape but are not yet fit to data.
+
+# Pre-derived: engine-shaft brake torque (ft-lb) per PSI of pump pressure.
+#   = PUMP_DISP_CUIN / (2*pi)  [in-lb/PSI at pump] / 12 [->ft-lb] / GEAR_RATIO [->crank]
+# At 1128 PSI this is 1128 * PSI_TO_ENGINE_FTLB = ~11.0 ft-lb (matches worked point).
+PSI_TO_ENGINE_FTLB = PUMP_DISP_CUIN / (2.0 * math.pi * 12.0 * GEAR_RATIO)
 
 # --- Proportional valve lag (first order) ---
 TAU_VALVE = 0.120                  # s, 120 ms -- midpoint of the 50-200 ms hardware spec
@@ -85,7 +115,8 @@ COOLING_COEFF = 0.05
 AMBIENT_TEMP_C = 25.0
 
 # --- Speed references ---
-RPM_MAX = 6100.0                   # nominal governed max; pump-load normalisation
+RPM_MAX = 6100.0                   # nominal governed max (reference only; the brake
+                                   # model no longer normalises pump load against it)
 # Starter brings the engine to ~idle on enable; cranking is not modelled, so on
 # the RUN rising edge we seed RPM to the lowest tabulated curve point.
 IDLE_RPM = 2400   # Warm idle, measured from real LO206 race session data (May 2026).
@@ -176,6 +207,7 @@ class DynoEngine:
         self._valve_act = 0.0          # actual valve % after first-order lag
         self._cht = AMBIENT_TEMP_C     # cylinder head temp, degC
         self._pressure_psi = 0.0
+        self._pressure_dev_psi = 0.0   # PSI, last developed (uncapped) pump pressure
         self._pump_load = 0.0          # ft-lbs, last computed brake torque
         # inputs
         self._engine_enable = False
@@ -229,9 +261,39 @@ class DynoEngine:
             return 0.0
         return interpolate_torque(self._rpm)
 
+    def _pump_flow_gpm(self) -> float:
+        """Pump volumetric flow (GPM) at the current engine RPM.
+
+        Fixed-displacement pump on the 2.909:1 gear set: pump turns at
+        engine_rpm / GEAR_RATIO and pumps PUMP_DISP_CUIN per rev. 231 cu in/gal.
+        """
+        pump_rpm = self._rpm / GEAR_RATIO
+        return PUMP_DISP_CUIN * pump_rpm / 231.0
+
+    def _pump_brake_pressure_psi(self) -> float:
+        """Pressure (PSI) the non-compensated valve develops at the pump outlet.
+
+        Orifice model: pressure rises with flow (Q^2) and with closure
+        (restriction^2). restriction = actual valve position / 100 (0 = open,
+        1 = full closure). See VALVE_ORIFICE_K for the worked-point calibration
+        and the bench-measurement caveat.
+        """
+        restriction = self._valve_act / 100.0
+        flow_gpm = self._pump_flow_gpm()
+        return VALVE_ORIFICE_K * (restriction ** 2) * (flow_gpm ** 2)
+
     def _compute_pump_load(self) -> float:
-        """Hydraulic brake (resisting) torque, ft-lbs, from actual valve & RPM."""
-        return PUMP_LOAD_GAIN * (self._valve_act / 100.0) * (self._rpm / RPM_MAX)
+        """Hydraulic brake (resisting) torque at the ENGINE shaft, ft-lbs.
+
+        Derived from the developed pump pressure (stored for the pressure
+        telemetry, uncapped): brake torque = pressure * PSI_TO_ENGINE_FTLB,
+        where PSI_TO_ENGINE_FTLB folds in the pump displacement, the in-lb->ft-lb
+        conversion, and the 2.909:1 reduction back to the crank. Speed-independent
+        for a given pressure; the speed dependence enters via the flow term in the
+        pressure model above.
+        """
+        self._pressure_dev_psi = self._pump_brake_pressure_psi()
+        return self._pressure_dev_psi * PSI_TO_ENGINE_FTLB
 
     def tick(self, dt: float = None) -> None:
         """Advance the model by one time step ``dt`` (seconds)."""
@@ -289,15 +351,19 @@ class DynoEngine:
         else:
             self._rpm_capped_at_max = False
 
-        # 4. Hydraulic pressure: back-pressure baseline + proportional contribution
-        #    from pump brake torque. The return-line back-pressure valve enforces
-        #    a minimum reading at all RPMs -- even at 0% valve, pressure does not
-        #    fall below BACKPRESSURE_BASELINE_PSI. Cap at the safety trip so the
-        #    published register stays bounded if pump_load spikes.
-        proportional_psi = (self._pump_load / MAX_PUMP_TORQUE) * MAX_PRESSURE_PSI
-        self._pressure_psi = BACKPRESSURE_BASELINE_PSI + proportional_psi
-        if self._pressure_psi > mb.OVERPRESSURE_TRIP_PSI:
-            self._pressure_psi = mb.OVERPRESSURE_TRIP_PSI
+        # 4. Hydraulic pressure: the pressure the valve develops at the pump outlet
+        #    (computed in _compute_pump_load and stored uncapped in
+        #    self._pressure_dev_psi). The new design has NO return-line back-pressure
+        #    valve, so there is no additive baseline -- at 0% command the valve is
+        #    open and outlet pressure is ~0. Cap the PUBLISHED register at PSI_REG_MAX
+        #    (3000, the transducer range) -- NOT at the overpressure trip -- so that
+        #    an overpressure is actually VISIBLE to the trip (mirrors how ENGINE_RPM
+        #    extends past the overspeed trip so the controller can see it). The old
+        #    model capped at the trip, which masked overpressure entirely; that was
+        #    harmless only because the old plant never developed >900 PSI.
+        self._pressure_psi = self._pressure_dev_psi
+        if self._pressure_psi > mb.PSI_REG_MAX:
+            self._pressure_psi = float(mb.PSI_REG_MAX)
 
         # 5. CHT thermal model.
         heat_input = self._pump_load * self._rpm * THERMAL_SCALE
@@ -375,14 +441,20 @@ class DynoEngine:
         return self._limiter_active
 
 
-# OBSERVED VALUES (smoke test, OLD restricted-slide curve, 50% valve, J=0.05, gain=12.0):
-#   - Standalone settling (4 s @ 50% valve): rpm ~5392, torque ~5.64 ft-lbs,
-#     valve_act 50.0%, psi ~309, cht ~33 C, status running.
-#   - Live Modbus TCP (2 s after enable @ 50%): rpm 4863, torque 6.80 ft-lbs
-#     (on-curve), psi 279, cht 28 C, valve_act 50.00%, status running.
-#   - Equilibrium settles near ~5400 rpm at 50% valve; RPM lands in the
-#     expected 3000-6000 band. Higher valve % => lower equilibrium rpm (more
-#     braking), as intended.
+# OBSERVED VALUES (new physically-grounded brake model, Stock-206 curve, J=0.05):
+#   - Worked-point anchor reproduces exactly: valve 100% @ 2500 RPM (7.96 GPM)
+#     -> 1128 PSI developed -> 11.0 ft-lb brake torque at the crank.
+#   - Developed-pressure magnitudes are in the design ballpark (NOT 10x off):
+#     valve 50% @ 5000 RPM -> 1128 PSI; valve 60% @ 4000 RPM -> 1040 PSI.
+#     Full restriction higher in the band climbs steeply (Q^2): ~4500 PSI at
+#     5000 RPM, ~6700 PSI at 6100 RPM (these would open relief / fault for real).
+#   - Full throttle + valve 100% UNDER THE CURRENT 900 PSI SIM TRIP: pressure
+#     crosses 900 at ~2749 RPM, the model faults, the valve is forced shut, and
+#     the engine runs up to the ~6100 limiter. No low-RPM floor is holdable until
+#     the trips are raised to the ~2000 PSI relief scheme (NEXT SESSION).
+#   - Torque-balance floor with trips raised: ~2510 RPM (1141 PSI, brake 11.1 =
+#     engine 11.1 ft-lb). This is the true brake-capacity floor of the new pump
+#     (vs the old placeholder's ~3360); pins next session's SWEEP_START_RPM review.
 
 if __name__ == "__main__":
     # Quick standalone settling demo at 50% valve.
