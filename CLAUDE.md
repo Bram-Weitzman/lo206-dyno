@@ -229,10 +229,35 @@ SWEEP_START_RPM DEFAULT was bumped 3200 -> 3400 (register_map.md + dashboard) so
 the default sweep starts just above the new floor; the 2500 lower CLAMP is
 unchanged.
 
-**VERIFICATION SWEEP PENDING (Step 4):** the clean stepped-sweep + CSV export
-from a remote browser has NOT yet been run. Curve fix, naming fix, and this
-re-probe are committed + pushed. Once a sweep confirms HP rises end-to-end with
-peak HP ~8.6, this pending note will be removed.
+**VERIFICATION SWEEP -- PARTIAL PASS then BLOCKED (Step 4, 2026-05-23):** ran a
+remote-browser stepped sweep (run #30, 3400->6100, step 400, dwell 2000ms).
+Through the 5400 step the corrected curve behaves EXACTLY as intended -- torque
+falls gently (11.1 -> 9.4 ft-lb) and **HP RISES 5.99 -> 9.16** (set 3400 hp 5.99;
+set 5000 hp 8.78; set 5400 hp 9.16). The falling-HP bug is gone. BUT the sweep
+could not complete the top of the band: at the 5400 step the PID went unstable
+(valve_cmd slamming 0<->100%), hydraulic pressure spiked to 767 PSI and crossed
+the PLC-side overpressure interlock `PSI_TRIP_PSI := 750.0` (dyno_control.st:98).
+The PLC latched a fault and forced SAFETY_ENABLE->0; pressure then decayed and
+the latch released, but the run was left stopped with SWEEP_STATE stuck at 1
+(the sweep supervisor is gated on SAFETY_ENABLE=1, so it neither advances nor
+completes). No sim status=2 was logged -- the sim own overpressure cap is 900,
+never reached. No full-band CSV could be exported.
+
+ROOT CAUSE is the corrected (higher) torque, NOT the data or HP path: the
+unrestricted-206 curve makes ~9.4 ft-lb across the upper-mid band (vs ~5-6 with
+the old restricted curve), so the brake must work far harder to hold each step.
+Steady-state hold pressure (~556 PSI at 5400) is under the trip, but the PID --
+still tuned for the old, weaker plant -- oscillates and the valve-to-100%
+transients spike pressure past 750.
+
+DECISION NEEDED before Step 4 can pass (a control/safety change beyond the
+torque-data fix, left for a deliberate call): (a) re-tune the PID gains for the
+corrected plant so the valve stops oscillating (most likely the right fix);
+and/or (b) revisit `PSI_TRIP_PSI` (750, flagged TODO-calibrate) and/or
+`PUMP_LOAD_GAIN` (18.5) so the pressure needed to hold the upper band stays under
+the trip. The torque-curve correction itself (Steps 1-3) is committed, pushed,
+and verified correct through 5400 RPM. This note stays until a clean full-band
+sweep passes.
 
 ---
 
