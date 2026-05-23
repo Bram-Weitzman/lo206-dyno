@@ -232,7 +232,57 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-### Session 2026-05-23 (newest) -- Pump flow corrected (10x) + valve/circuit re-spec'd
+### Session 2026-05-23 (newest) -- PID retuned + trips raised + sweep VERIFIED
+
+The control loop is now tuned to the corrected brake model and a clean full-band
+verification sweep was captured -- the work the prior notes flagged as "next
+session." This UNBLOCKS the design-document headline torque/HP figure.
+
+- **Pressure trips raised 900/750 -> 1700 PSI** (sim `OVERPRESSURE_TRIP_PSI` +
+  PLC `PSI_TRIP_PSI`). Ordering: working ~1128 < trip 1700 < relief ~2000 <
+  rating 3000. (commit `6bb9e28`)
+- **PID retuned KP/KI/KD 0.2/0.05/0.01 -> 0.02/0.02/0.0** (P+I), tuned against
+  the sim over Modbus at the 50 ms control period. The old gains bang-banged the
+  valve and tripped; the new gains hold tight (mean error ~45-65 RPM = the +-100
+  noise floor, valve std ~1-3%, no bang-bang). KD=0 because the +-100 RPM sensor
+  noise makes derivative-on-measurement counterproductive. (commit `ca0c026`)
+- **OpenPLC recompiled** with the new gains+trip (`st_files/472060.st` rebuilt
+  via `/compile-program`), then the full stack was brought up.
+
+**VERIFIED SWEEP -- run_id 38** (CSV: `docs/verification/sweep_run38.csv`, 728
+samples). Stepped 4000 -> 6100 RPM, step 400, dwell 10000 ms, driven through the
+dashboard command API -> OpenPLC :502 -> PLC sweep supervisor -> sim. **Completed
+cleanly, NO fault** (peak pressure 1594 PSI < 1700 trip), PLC self-completed
+(SWEEP_STATE 1->2, dropped SAFETY_ENABLE), run auto-closed. Settled per step:
+
+| setpoint | act RPM | torque ft-lb | HP   | PSI  | valve % |
+|---------:|--------:|-------------:|-----:|-----:|--------:|
+| 4000     | 3989    | 9.74         | 7.39 | 997  | 58.6    |
+| 4400     | 4438    | 9.19         | 7.77 | 951  | 52.0    |
+| 4800     | 4821    | 9.30         | 8.54 | 953  | 47.8    |
+| 5200     | 5210    | 9.40         | 9.32 | 976  | 44.6    |
+| 5600     | 5582    | 9.05         | 9.62 | 932  | 40.6    |
+| 6000     | 5983    | 7.61         | 8.67 | 768  | 34.4    |
+| 6100     | 6037    | 4.25*        | 4.89*| 443  | 25.7    |
+
+**Torque falls** gently (9.74 -> 7.61 over 4000-6000) and **HP RISES** to a peak
+~**9.6 HP at ~5580 RPM**, ~**8.67 HP at 6000** (the ~8.6 HP ballpark; matches the
+published Stock-206 curve). *The 6100 row is degraded -- it sits in the rev-limiter
+band (spark cut at 6100), so torque is intermittently cut; not a valid power
+point. The usable power curve is 4000-6000 RPM.
+
+**DWELL NOTE:** the gentle PID needs >2 s to settle each step; 2000 ms (the prior
+default) leaves the first idle->setpoint acquisition overshooting (it free-
+accelerates past the target). 10000 ms dwell settles cleanly. The dashboard dwell
+slider is the knob for this. **SWEEP MUST START FROM IDLE:** the sim models no
+coastdown drag, so a back-to-back sweep starts with the engine still at ~6000 RPM
+and the brake-grab overpressure-trips -- restart the sim (or otherwise return to
+idle) before each verification sweep. Start RPM ~4000 (below ~3800 the valve
+saturates / the grab can trip).
+
+---
+
+### Session 2026-05-23 -- Pump flow corrected (10x) + valve/circuit re-spec'd
 
 A focused **flow correction**. The prior session had flagged the pump flow as
 ~10× too low; this session confirmed and fixed it, then re-spec'd the
