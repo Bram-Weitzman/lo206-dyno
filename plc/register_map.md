@@ -77,12 +77,18 @@ holding-register command block (40001-40004) and the sweep block (40005-40009)
 are already laid out — a coil adds the throttle in a separate Modbus space with
 **no renumbering of any existing register**.
 
-| Coil addr | %QX   | Name           | Type | Range | Owner             | Meaning |
-|-----------|-------|----------------|------|-------|-------------------|---------|
-| 00001 (0) | %QX0.0| THROTTLE       | bool | 0 - 1 | operator + PLC    | 0 = idle (engine makes NO drive torque), 1 = wide-open throttle (WOT, full torque curve) |
+| Sim coil | PLC located | :502 wire | Name     | Type | Range | Owner          | Meaning |
+|----------|-------------|-----------|----------|------|-------|----------------|---------|
+| 0        | %QX100.0    | coil 800  | THROTTLE | bool | 0 - 1 | operator + PLC | 0 = idle (engine makes NO drive torque), 1 = wide-open throttle (WOT, full torque curve) |
+
+> **Addressing (verified 2026-05-23):** the PLC binds the throttle to **%QX100.0**
+> — the located address OpenPLC assigns the slave device's first coil-write point
+> (same +100 base as the %QW100 holding-write block). The slave-device master
+> mirrors %QX100.0 → **sim coil 0**. On OpenPLC's built-in :502 server %QX100.0 is
+> **coil address 800** (100×8), which is what the dashboard writes/reads.
 
 ### Notes
-- **THROTTLE (coil 0 / %QX0.0)** — a **BINARY throttle**: idle vs wide-open only.
+- **THROTTLE (sim coil 0 / PLC %QX100.0 / :502 coil 800)** — a **BINARY throttle**: idle vs wide-open only.
   This is the engine's accelerator, distinct from the brake (VALVE_POSITION_CMD).
   At **idle (0)** the engine produces no drive torque, so internal friction +
   coastdown (and any braking) bring RPM down toward a low idle — this is how RPM
@@ -101,7 +107,7 @@ are already laid out — a coil adds the throttle in a separate Modbus space wit
   coil; that is post-interview work. This coil is the minimal control needed to
   bring RPM down off-throttle and to start a sweep from a defined condition.
 - **Sim mirror:** the OpenPLC slave-device config gains a **Coils-Write** block
-  (start 0, size 1) mapping `%QX0.0` → sim coil 0, alongside the existing
+  (start 0, size 1) mapping `%QX100.0` → sim coil 0, alongside the existing
   Holding-Write (size 4) and Input-Register (size 7) blocks. Like those, this is
   runtime config (re-entered in the OpenPLC web UI, not version-controlled).
   `simulator/modbus_map.py` gains `COIL_THROTTLE = 0`.
@@ -257,7 +263,7 @@ trust the status word alone).
 | Mode / enable      | 40003 - 40004  | Operator (HMI / dashboard)      | PLC    |
 | Sweep params       | 40005 - 40008  | Operator (dashboard)            | PLC (not sim) |
 | Sweep status       | 40009          | PLC                             | Dashboard |
-| Throttle (coil)    | coil 0 / %QX0.0| Operator + PLC-override (idle on fault/disable; WOT on arm) | Sim/HW |
+| Throttle (coil)    | %QX100.0 (sim coil 0) | Operator + PLC-override (idle on fault/disable; WOT on arm) | Sim/HW |
 | Telemetry (in)     | 30001 - 30008  | Sim/HW                          | PLC    |
 
 Any change to address, scaling, range, or ownership above is a **contract

@@ -35,7 +35,10 @@ const MODE_SWEEP = 2;
 const SAFETY_RUN = 1;
 const SAFETY_ESTOP = 0;
 
-const COIL_THROTTLE = 0; // %QX0.0 coil 00001 — binary throttle (false=idle, true=WOT)
+// Throttle coil on OpenPLC :502. The PLC binds the throttle to %QX100.0 (the
+// located address OpenPLC assigns the slave device's coil-write point, mirrored
+// to sim coil 0). On the Modbus wire %QX100.0 = coil address 100*8 = 800.
+const COIL_THROTTLE = 800;
 const VALVE_SCALE = 100; // % x100 wire scaling (register_map.md)
 const MANUAL_VALVE = { lo: 0, hi: 100, dflt: 0 }; // manual valve override %
 

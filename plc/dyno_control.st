@@ -184,6 +184,18 @@ VAR
     iSweepStepRaw    AT %QW106 : INT;   (* 40007 RPM/step (operator) *)
     iSweepDwellRaw   AT %QW107 : INT;   (* 40008 ms/step (operator) *)
     iSweepState      AT %QW108 : INT;   (* 40009 0 idle/1 run/2 done (PLC output) *)
+
+    (* Binary throttle coil (contract: coil 0 / %QX0.0). Operator-set from the
+       dashboard (accelerator/lift-off); the PLC FORCES it idle on fault and
+       while stopped, and FORCES it wide-open while an automated run (PID/sweep)
+       is armed. Mirrored to the sim via the slave-device Coils-Write block.
+       Default FALSE (idle) on startup = fail-safe throttle closed. *)
+    oThrottle        AT %QX100.0 : BOOL; (* throttle coil. %QX100.0 = the located
+                                            address OpenPLC assigns the slave
+                                            device's first coil-write point (same
+                                            base as the %QW100 holding-write block),
+                                            which the master mirrors to sim coil 0.
+                                            On OpenPLC :502 this is coil addr 800. *)
 END_VAR
 
 (* --------------------------------------------------------------------
@@ -264,6 +276,7 @@ IF bFaultLatched THEN
     rValveCmdPct  := VALVE_MIN_PCT;
     iSafetyEnable := SAFETY_STOP;     (* clear run command (no ENGINE_ENABLE reg exists) *)
     bSafetyEnabled := FALSE;
+    oThrottle     := FALSE;           (* fail-safe: close the throttle on fault *)
     rIntegral     := 0.0;             (* prevent windup while tripped *)
     bPidActive    := FALSE;
     rLastActualRpm := rActualRpm;     (* keep derivative continuous on recovery *)
@@ -275,6 +288,7 @@ ELSIF NOT bSafetyEnabled THEN
        This is also how Stop / E-stop ends a sweep mid-run. *)
     iValveCmdRaw  := VALVE_REG_MIN;
     rValveCmdPct  := VALVE_MIN_PCT;
+    oThrottle     := FALSE;           (* throttle idle whenever stopped *)
     rIntegral     := 0.0;
     bPidActive    := FALSE;
     rLastActualRpm := rActualRpm;
@@ -291,6 +305,14 @@ ELSE
         CONTROL_MODE selects how the valve is driven.)
        ================================================================ *)
     bPidActive := (iControlMode = MODE_PID) OR (iControlMode = MODE_SWEEP);
+
+    (* THROTTLE: an automated run (PID hold or sweep) runs at WIDE-OPEN throttle,
+       so arming forces the throttle open -- the dyno measures the WOT curve. In
+       MANUAL mode the operator owns the throttle (dashboard accelerator button)
+       for diagnostics, so the PLC does NOT write it here. *)
+    IF bPidActive THEN
+        oThrottle := TRUE;
+    END_IF;
 
     (* Bumpless-ish start: on the disabled->enabled (or mode-entry) edge,
        zero the integrator and seed the derivative so we don't kick. *)
@@ -351,6 +373,7 @@ ELSE
                     iSweepState    := SWEEP_COMPLETE;
                     iSafetyEnable  := SAFETY_STOP;
                     bSafetyEnabled := FALSE;
+                    oThrottle      := FALSE;    (* lift throttle: engine coasts down *)
                     iValveCmdRaw   := VALVE_REG_MIN;
                     rValveCmdPct   := VALVE_MIN_PCT;
                     rIntegral      := 0.0;
