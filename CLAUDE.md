@@ -43,10 +43,11 @@ The full software stack is complete and verified end-to-end on dyno-dev:
   pump rating 3000 PSI.** Worked point: absorbing the engine's ~11 ft-lb low-end
   torque needs ~32 ft-lb (384 in-lb) at the pump shaft (×2.909) = ~1128 PSI (~38% of
   rating). Torque→pressure is speed-independent; only flow varies with RPM.
-- **Pump flow:** ~8.0 GPM at 2500 engine RPM → ~19.4 at 6100 (Q = 2.14 × pump_rpm / 231).
-  ⚠ The brief quoted 0.8–2.0 GPM, ~10× lower — flagged as a likely error (the 2.14
-  cu in/rev displacement is load-bearing for the torque/pressure math); affects valve
-  flow sizing. See `docs/bom.md`. VERIFY before purchasing the valve.
+- **Pump flow (VERIFIED, 2026-05-23):** **8.0 GPM at 2500 engine RPM → 19.4 GPM at
+  6100** (Q = 2.14 × pump_rpm / 231, pump_rpm = engine_rpm / 2.909). An earlier
+  0.8–2.0 GPM figure was wrong by ~10× (a 0.214-vs-2.14 cu in/rev displacement slip)
+  and is fully superseded. This 8–19.4 GPM window is what the valve / relief /
+  reservoir / plumbing are sized for (see `docs/bom.md`).
 - **Coil drive: TBD** — 12 V PWM vs 0–10 V amp card. Valve TYPE is locked; coil drive
   is NOT chosen this session.
 - **Pressure transducer range** widened to **0–3000 PSI** (was 0–1500) for this scheme;
@@ -263,11 +264,11 @@ brief's prose said "engine brake torque = pump-shaft torque × 2.909," which is
 high-torque side), which is what reproduces the worked point. Noted in code +
 `docs/bom.md`.
 
-**FLOW INCONSISTENCY (flagged, affects valve sizing):** the brief quotes pump
-flow as 0.8–2.0 GPM, but 2.14 cu in/rev at these pump speeds yields **~8–19 GPM**
-(~10× higher). The displacement is load-bearing for the torque/pressure math, so
-the flow figures look like the error. The sim uses the displacement-consistent
-flow. **Confirm pump displacement & flow before sizing the ~3–6 GPM valve.**
+**FLOW INCONSISTENCY (RESOLVED 2026-05-23):** the earlier 0.8–2.0 GPM figure was
+confirmed wrong by ~10× (a 0.214-vs-2.14 cu in/rev displacement slip). The verified
+window is **8.0–19.4 GPM**; the sim already used the displacement-consistent flow.
+The valve was subsequently re-spec'd to a ~30 GPM throttle cartridge for this window
+— see the newest session entry and `docs/bom.md`.
 
 **Floor re-probe (full throttle, valve 100%):**
 - **Under the UNCHANGED 900 PSI sim trip:** develops >900 PSI at ~2749 RPM →
