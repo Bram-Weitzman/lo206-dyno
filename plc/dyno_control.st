@@ -69,11 +69,31 @@ PROGRAM dyno_control
    TUNING + CALIBRATION CONSTANTS  (no magic numbers anywhere below)
    -------------------------------------------------------------------- *)
 VAR CONSTANT
-    (* PID gains. Starting values for sim tuning; re-tune, then calibrate
-       on the real rig where valve gain and inertia differ. *)
-    KP : REAL := 0.2;    (* TODO: calibrate against real hardware *)
-    KI : REAL := 0.05;   (* TODO: calibrate against real hardware *)
-    KD : REAL := 0.01;   (* TODO: calibrate against real hardware *)
+    (* PID gains. RETUNED 2026-05-23 for the corrected brake model (2.14 cu
+       in/rev pump, 2.909:1) -- the old 0.2/0.05/0.01 were tuned to the weaker
+       chain-drive plant and made the valve bang-bang (0<->100%) and overpressure-
+       trip on the much stronger new brake. Tuned against the sim over Modbus at
+       the 50 ms control period (the same path OpenPLC sees), P+I only:
+         - KP 0.2 -> 0.02: the new plant has far more brake authority per % of
+           valve, so a tenth of the old proportional gain gives a tight hold.
+           KP also scales the +-100 RPM sensor-noise straight onto the valve;
+           0.02 keeps that to ~+-2% valve jitter (0.2 gave ~+-20% -> bang-bang).
+         - KI 0.05 -> 0.02: removes steady-state offset (mean RPM lands on the
+           setpoint) without windup; conditional anti-windup (below) holds during
+           the idle->setpoint acceleration.
+         - KD 0.01 -> 0.0: derivative-on-measurement amplifies the +-100 RPM
+           noise (d/dt of noise ~ thousands of RPM/s); P+I already meets the
+           targets, so derivative is intentionally disabled (the term + structure
+           remain for the real rig, where a filtered derivative may help).
+       Verified in sim: clean hold at 3800/4500/5500/6000 RPM, mean error
+       ~45-65 RPM (within the +-100 noise band), valve std ~1-3% (no bang-bang),
+       no overpressure trip. Holding BELOW ~3800 saturates the valve toward 100%
+       (no headroom) and the idle->setpoint grab can transiently trip 1700 PSI,
+       so sweeps start at ~3800+. TODO: re-calibrate on the real rig (valve gain,
+       inertia, and lag differ from the sim). *)
+    KP : REAL := 0.02;
+    KI : REAL := 0.02;
+    KD : REAL := 0.0;
 
     (* Loop period. MUST match the OpenPLC task cycle time, because the
        integral/derivative use it as dt. Sim valve lag (tau ~120 ms) is far
