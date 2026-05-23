@@ -9,10 +9,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import modbus_map as mb  # noqa: E402
-from engine_sim import (  # noqa: E402
-    DynoEngine, TAU_VALVE, clutch_torque_fraction,
-    RPM_LIMITER, RPM_LIMITER_HYSTERESIS,
-)
+from engine_sim import DynoEngine, TAU_VALVE, clutch_torque_fraction  # noqa: E402
 
 
 def test_valve_lag():
@@ -109,36 +106,33 @@ def test_pump_loads_engine_directly_no_clutch():
     assert sim._pump_load > 0.0        # pump is coupled and loading the engine
 
 
-def test_full_brake_trips_overpressure_under_current_cap():
-    """Full throttle + valve 100% with the NEW physically-grounded brake model.
+def test_full_brake_settles_at_floor_under_raised_trip():
+    """Full throttle + valve 100% with the brake model AND the raised trip.
 
-    REPLACES the old ~3135 RPM brake-floor assertion. With the spec'd 2.14 cu
-    in/rev pump on the 2.909:1 gear set, full restriction develops well over
-    1000 PSI (the design working pressure is ~1128 PSI). The sim overpressure
-    trip is UNCHANGED this session (OVERPRESSURE_TRIP_PSI = 900), so the pump
-    crosses it almost immediately at full braking: the model latches a fault,
-    the interlock forces the valve shut, and with no brake the engine runs up to
-    the rev limiter. So there is NO low-RPM 'floor' under the current trip --
-    that is the point. The brake-capacity floor only becomes reachable once the
-    trips are raised to the new ~2000 PSI relief scheme (next session); see
-    test_brake_capacity_floor_with_trips_raised for the torque-balance floor.
+    The overpressure trip was raised 900 -> 1700 PSI (2026-05-23) for the
+    corrected brake model, so the ordering is working ~1128 < trip 1700 < relief
+    ~2000 < rating 3000. Because the steady working pressure (~1141 PSI at the
+    floor) and the start-up transient (~1290 PSI peak) both stay BELOW 1700, full
+    braking no longer faults: the engine now settles at the torque-balance
+    brake-capacity floor (~2510 RPM), which is the whole point of raising the
+    trip. (Under the old 900 PSI trip this faulted and ran up to the limiter.)
     """
     sim = DynoEngine()
     sim.set_engine_enable(True)
     sim.set_control_mode(0)
     sim.set_valve_position(100)
     peak_dev_psi = 0.0
-    for _ in range(2000):              # 20 s settle at 10 ms/step
+    for _ in range(3000):              # 30 s settle at 10 ms/step
         sim.tick(0.01)
         peak_dev_psi = max(peak_dev_psi, sim._pressure_dev_psi)
 
-    # Developed pressure exceeded the (unchanged) sim overpressure trip...
-    assert peak_dev_psi > mb.OVERPRESSURE_TRIP_PSI
-    # ...so a fault latched and the engine ran up to the limiter rather than
-    # holding a low brake floor.
-    assert sim.fault is True
-    assert sim.get_status() == mb.STATUS_FAULT
-    assert sim._rpm > RPM_LIMITER - RPM_LIMITER_HYSTERESIS  # ran up, not braked down
+    # No fault: working + transient pressure stayed under the raised trip.
+    assert sim.fault is False
+    assert sim.get_status() == mb.STATUS_RUNNING
+    assert peak_dev_psi < mb.OVERPRESSURE_TRIP_PSI   # transient rode under the trip
+    # Settled at the torque-balance floor, brake torque == engine torque.
+    assert 2350.0 < sim._rpm < 2700.0
+    assert abs(sim._pump_load - sim.engine_torque()) < 0.5
 
 
 def test_brake_capacity_floor_with_trips_raised(monkeypatch):

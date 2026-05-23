@@ -174,23 +174,22 @@ trust the status word alone).
 | Limit                  | Value     | Source constant         | Checked against |
 |------------------------|-----------|-------------------------|-----------------|
 | Overspeed              | 6500 RPM  | (PLC `RPM_TRIP_RPM`)    | 30001 ENGINE_RPM |
-| Over-pressure (sim)    | 900 PSI   | `OVERPRESSURE_TRIP_PSI` (`simulator/modbus_map.py`) | 30003 HYDRAULIC_PSI |
-| Over-pressure (PLC)    | 750 PSI   | `PSI_TRIP_PSI` (`dyno_control.st`) | 30003 HYDRAULIC_PSI |
+| Over-pressure (sim)    | 1700 PSI  | `OVERPRESSURE_TRIP_PSI` (`simulator/modbus_map.py`) | 30003 HYDRAULIC_PSI |
+| Over-pressure (PLC)    | 1700 PSI  | `PSI_TRIP_PSI` (`dyno_control.st`) | 30003 HYDRAULIC_PSI |
 | Over-temperature       | 250 °C    | `OVERTEMP_TRIP_C`       | 30004 HEAD_TEMP_C |
 
-> The PLC trip thresholds are flagged `(* TODO: calibrate against real hardware *)`
-> in `dyno_control.st`. Tune them on the sim, then verify against the real rig.
+> The RPM and CHT trip thresholds are flagged `(* TODO: calibrate against real
+> hardware *)` in `dyno_control.st`. Tune on the sim, then verify against the rig.
 
-> **Three-tier pressure scheme (spec'd brake hardware, 2026-05-22):** the brake
+> **Three-tier pressure scheme + overpressure trip (2026-05-23):** the brake
 > circuit's design pressures are **working ~1128 PSI / mechanical relief ~2000 PSI
-> / pump rating 3000 PSI** (`docs/bom.md`). The two overpressure trips above
-> (sim 900, PLC 750) currently sit **below the ~1128 PSI working point** — they
-> were calibrated to the old 3.5:1 chain-drive / 1.52 cu.in. pressure model and
-> are **deliberately NOT changed this session.** With the new physically-grounded
-> brake model (`engine_sim.py`), full braking develops ~1128+ PSI and therefore
-> trips the sim immediately — expected, and to be resolved next session by
-> retuning the PID for the new plant and raising the trips against the ~2000 PSI
-> relief. Until then the sim cannot hold the upper band.
+> / pump rating 3000 PSI** (`docs/bom.md`). The overpressure trip was **raised
+> 900/750 → 1700 PSI** (both sim and PLC must agree) so the ordering is
+> **working ~1128 < trip 1700 < relief ~2000 < rating 3000**: 1700 rides ~570 PSI
+> (~50%) above the steady working point to tolerate PID transients, yet fires
+> ~300 PSI before the mechanical relief. Steady-state hold pressure across the
+> band is ~970–1141 PSI (engine torque ÷ the pump constant), comfortably under
+> the trip. 1700 < `PSI_REG_MAX` (3000) so an over-trip reading is representable.
 
 ---
 

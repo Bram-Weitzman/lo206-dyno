@@ -95,7 +95,13 @@ VAR CONSTANT
        (draft, AiM data 2026-04-24). 340 RPM margin prevents false trips.
        Do not lower this threshold. *)
     RPM_TRIP_RPM  : REAL := 6500.0;
-    PSI_TRIP_PSI  : REAL := 750.0;   (* = OVERPRESSURE_TRIP_PSI; TODO: calibrate *)
+    (* PSI_TRIP_PSI: raised 750 -> 1700 (2026-05-23) for the corrected brake
+       model + three-tier pressure scheme. Ordering: working ~1128 < trip 1700
+       < mechanical relief ~2000 < pump rating 3000. 1700 sits ~570 PSI (~50%)
+       above the ~1128 PSI steady working point to ride out PID transients, yet
+       ~300 PSI below the ~2000 PSI relief so the software trip fires first.
+       Must equal OVERPRESSURE_TRIP_PSI in simulator/modbus_map.py. *)
+    PSI_TRIP_PSI  : REAL := 1700.0;
     CHT_TRIP_C    : REAL := 250.0;   (* = OVERTEMP_TRIP_C; TODO: calibrate *)
 
     (* Enumerations from the contract (modbus_map.py). *)

@@ -92,12 +92,16 @@ AFR_REG_MAX    = 200
 
 # --- Safety trip limits (physical plant limits; enforced by the sim and PLC) ---
 # Kept here so the contract module is the single source of truth for limits.
-OVERPRESSURE_TRIP_PSI = 900.0   # Revised for #219 chain drive, 3.5:1 reduction.
-                                 # Peak operating pressure at full engine torque
-                                 # (10 ft-lbs × 3.5 ratio = 35 ft-lbs at pump)
-                                 # is ~595 PSI with 1.52 cu.in. pump. 900 PSI gives
-                                 # software trip margin before 1,500 PSI mechanical
-                                 # relief fires.
-                                 # Previous value: 1,200 PSI (belt drive, 2.1:1).
+OVERPRESSURE_TRIP_PSI = 1700.0  # Raised 900 -> 1700 (2026-05-23) for the corrected
+                                 # brake model (2.14 cu in/rev, 2.909:1) + three-tier
+                                 # pressure scheme. Ordering: working ~1128 < trip 1700
+                                 # < mechanical relief ~2000 < pump rating 3000. 1700 is
+                                 # ~570 PSI (~50%) above the ~1128 PSI steady working
+                                 # point (rides out PID transients) and ~300 PSI below
+                                 # the ~2000 PSI relief (software trip fires first).
+                                 # MUST equal PSI_TRIP_PSI in plc/dyno_control.st.
+                                 # Below PSI_REG_MAX (3000) so an over-trip reading is
+                                 # representable. History: 900 (#219 chain 3.5:1), 1200
+                                 # (belt 2.1:1).
                                  # TODO: confirm with pressure transducer on real hardware.
 OVERTEMP_TRIP_C       = 250.0

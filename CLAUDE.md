@@ -58,11 +58,11 @@ The full software stack is complete and verified end-to-end on dyno-dev:
   wants stable dithered coil current). Valve TYPE is locked; coil drive NOT finalized.
 - **Pressure transducer range** widened to **0–3000 PSI** (was 0–1500) for this scheme;
   `PSI_REG_MAX` in `modbus_map.py` bumped 1500→3000 (behavior-neutral under current trips).
-- **Brake-capacity floor (new model):** torque-balance floor **~2510 RPM** (with trips
-  conceptually raised) — brake torque 11.1 = engine torque 11.1 ft-lb. (Was ~3360 under
-  the old PUMP_LOAD_GAIN=18.5 placeholder.) **But under the UNCHANGED trips the sim
-  faults at full braking (>900 PSI at ~2749 RPM) and runs to the limiter — no holdable
-  floor until the trips/PID are addressed next session.**
+- **Brake-capacity floor (new model):** torque-balance floor **~2510 RPM** —
+  brake torque 11.1 = engine torque 11.1 ft-lb at ~1141 PSI. (Was ~3360 under the
+  old PUMP_LOAD_GAIN=18.5 placeholder.) With the **trip raised to 1700 PSI
+  (2026-05-23)**, full braking now settles at this floor without faulting (steady
+  ~1141 PSI / transient peak ~1290 PSI, both under 1700).
 
 ## Stack
 
@@ -127,15 +127,15 @@ must be changed *first*, deliberately, before either side.
 - **Torque curve fidelity**: we currently use published B&S 206 Racing data for the Stock/Unrestricted 206 slide (#555590, commonly called the black slide).
   Other slide configs are not yet digitized (see `docs/bom.md`).
 - **Safety thresholds**: RPM > 6500 remains a first-guess — confirm against
-  engine builder recommendations once on real hardware. **PSI trips are STALE vs
-  the new pressure scheme and were deliberately NOT changed this session:** sim
-  `OVERPRESSURE_TRIP_PSI` (`modbus_map.py`) = **900 PSI** and PLC `PSI_TRIP_PSI`
-  (`dyno_control.st`) = **750 PSI**, both calibrated to the old 3.5:1 chain model.
-  Both now sit BELOW the new ~1128 PSI working point, so the sim faults at full
-  braking. **NEXT SESSION must review both against the new three-tier scheme
-  (working ~1128 / relief ~2000 / rating 3000)**, alongside the PID retune. The
-  ~2000 PSI mechanical relief replaces the old 1,500 PSI; the old ~200 PSI
-  return-line back-pressure valve is dropped (no baseline in the new model).
+  engine builder recommendations once on real hardware. **PSI trips RAISED
+  900/750 → 1700 PSI (2026-05-23)** to match the corrected brake model: sim
+  `OVERPRESSURE_TRIP_PSI` (`modbus_map.py`) and PLC `PSI_TRIP_PSI`
+  (`dyno_control.st`) are both **1700 PSI** (they must agree). Ordering is now
+  **working ~1128 < trip 1700 < mechanical relief ~2000 < pump rating 3000** —
+  the trip rides ~50% above the steady working point for PID transients and fires
+  before the ~2000 PSI relief. The ~2000 PSI relief replaces the old 1,500 PSI;
+  the old ~200 PSI return-line back-pressure valve is dropped (no baseline in the
+  new model). RPM (6500) and CHT (250 °C) trips unchanged.
 - **AFR channel (30006)**: reserved but unpopulated — wideband O2 is a Phase 2
   hardware addition.
 - **Dashboard data path**: RESOLVED — the logger polls Modbus TCP and writes
@@ -220,9 +220,9 @@ VALVE_ORIFICE_K = 17.8        # PSI/(GPM^2 * restriction^2); non-comp orifice, p
 
 # simulator/modbus_map.py
 PSI_REG_MAX = 3000            # APPLIED 2026-05-22 -- 0-3000 range for the 3-tier scheme
-OVERPRESSURE_TRIP_PSI = 900   # UNCHANGED this session -- STALE (old 3.5:1 model); now below
-                              # the ~1128 PSI working point, so the sim faults at full braking.
-                              # Review next session vs the ~2000 PSI relief (with the PID retune).
+OVERPRESSURE_TRIP_PSI = 1700  # RAISED 900 -> 1700 (2026-05-23) for the corrected model;
+                              # working ~1128 < trip 1700 < relief ~2000 < rating 3000.
+                              # MUST equal PSI_TRIP_PSI in plc/dyno_control.st.
 ```
 
 ## Git author note
