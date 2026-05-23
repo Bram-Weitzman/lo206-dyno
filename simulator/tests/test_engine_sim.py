@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import modbus_map as mb  # noqa: E402
-from engine_sim import DynoEngine, TAU_VALVE, clutch_torque_fraction  # noqa: E402
+from engine_sim import DynoEngine, TAU_VALVE, clutch_torque_fraction, IDLE_RPM  # noqa: E402
 
 
 def test_valve_lag():
@@ -119,6 +119,7 @@ def test_full_brake_settles_at_floor_under_raised_trip():
     """
     sim = DynoEngine()
     sim.set_engine_enable(True)
+    sim.set_throttle(True)             # WOT: the torque-balance floor needs the engine firing
     sim.set_control_mode(0)
     sim.set_valve_position(100)
     peak_dev_psi = 0.0
@@ -151,6 +152,7 @@ def test_brake_capacity_floor_with_trips_raised(monkeypatch):
     monkeypatch.setattr(mb, "PSI_REG_MAX", 1.0e9)
     sim = DynoEngine()
     sim.set_engine_enable(True)
+    sim.set_throttle(True)             # WOT
     sim.set_control_mode(0)
     sim.set_valve_position(100)
     for _ in range(4000):              # 40 s settle at 10 ms/step
@@ -159,3 +161,58 @@ def test_brake_capacity_floor_with_trips_raised(monkeypatch):
     assert 2350.0 < sim._rpm < 2700.0          # torque-balance floor ~2510 RPM
     # at the floor the brake torque matches the engine torque (within noise)
     assert abs(sim._pump_load - sim.engine_torque()) < 0.5
+
+
+# --- Binary throttle + coastdown tests (2026-05-23) ----------------------
+def test_wot_makes_torque_idle_makes_none():
+    """At wide-open throttle the enabled engine makes curve torque; at idle
+    throttle it makes none (the binary-throttle contract)."""
+    sim = DynoEngine()
+    sim.set_engine_enable(True)
+    sim._rpm = 4000.0
+    sim.set_throttle(True)
+    assert sim.engine_torque() > 5.0          # on the WOT curve (~9-10 ft-lb)
+    sim.set_throttle(False)
+    assert sim.engine_torque() == 0.0         # idle: no drive torque
+
+
+def test_idle_throttle_decays_to_idle_not_limiter():
+    """An enabled engine at IDLE throttle, spinning high with no brake, decays
+    via coastdown friction to a low idle and SITS there -- it does NOT hang at
+    the limiter (the run-43 freewheel-at-6000 failure)."""
+    sim = DynoEngine()
+    sim.set_engine_enable(True)
+    sim.set_throttle(False)            # idle throttle
+    sim.set_valve_position(0)          # no brake
+    sim._rpm = 6000.0
+    for _ in range(800):               # 8 s
+        sim.tick(0.01)
+    assert sim.engine_torque() == 0.0          # idle makes no torque
+    assert abs(sim._rpm - IDLE_RPM) < 1.0      # settled at idle, not the limiter
+
+
+def test_lift_throttle_decelerates_from_high_rpm():
+    """Lifting the throttle (WOT -> idle) from a high RPM lets the engine
+    decelerate (coastdown), rather than freewheeling."""
+    sim = DynoEngine()
+    sim.set_engine_enable(True)
+    sim.set_throttle(True)
+    sim.set_valve_position(0)
+    sim._rpm = 5500.0
+    sim.set_throttle(False)            # lift off
+    rpm_before = sim._rpm
+    for _ in range(100):               # 1 s
+        sim.tick(0.01)
+    assert sim._rpm < rpm_before - 1000.0      # decelerated substantially in 1 s
+
+
+def test_disabled_engine_coasts_down_not_forever():
+    """A DISABLED but spinning engine spins down to rest (no idle governor when
+    off) -- it does not coast forever (the root cause of the run-43 bug)."""
+    sim = DynoEngine()
+    sim._rpm = 6000.0
+    sim._engine_enable = False
+    sim._prev_enable = False
+    for _ in range(500):               # 5 s
+        sim.tick(0.01)
+    assert sim._rpm < 500.0                    # spun down (would stay 6000 pre-fix)

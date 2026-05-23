@@ -49,6 +49,10 @@ HR_CONTROL_MODE    = 2   # 40003  0=manual 1=PID 2=sweep
 HR_SAFETY_ENABLE   = 3   # 40004  0=estop/stop 1=run
 HOLDING_REGISTER_COUNT = 4
 
+# --- Coils: binary commands (PLC writes, simulator reads) --- 0000x
+COIL_THROTTLE = 0        # 00001  binary throttle: 0=idle (no drive), 1=wide-open
+COIL_COUNT    = 1
+
 # --- Scale factors (engineering value * scale = raw register value) ---
 RPM_SCALE      = 1       # RPM 1:1
 TORQUE_SCALE   = 10      # ft-lbs x10
@@ -65,6 +69,10 @@ MODE_SWEEP  = 2
 # --- Safety enable constants (HR_SAFETY_ENABLE) ---
 SAFETY_ESTOP = 0   # stop / e-stop
 SAFETY_RUN   = 1   # run
+
+# --- Throttle coil constants (COIL_THROTTLE) ---
+THROTTLE_IDLE = 0   # engine makes no drive torque
+THROTTLE_WOT  = 1   # wide-open throttle (full torque curve)
 
 # --- Sim status constants (IR_SIM_STATUS) ---
 STATUS_STOPPED = 0

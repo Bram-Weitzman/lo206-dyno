@@ -122,10 +122,16 @@ async def physics_loop(server: ModbusTcpServer, engine: DynoEngine) -> None:
         control_mode = cmds[mb.HR_CONTROL_MODE]
         safety_enable = cmds[mb.HR_SAFETY_ENABLE]
 
+        # 1b. Read the binary throttle coil (PLC writes, sim reads).
+        coils = await ctx.async_getValues(dev, mb.FC_COILS,
+                                          mb.COIL_THROTTLE, mb.COIL_COUNT)
+        throttle_wot = bool(coils[mb.COIL_THROTTLE])
+
         engine.set_valve_position(valve_cmd_raw / mb.VALVE_SCALE)
         engine.set_target_rpm(target_rpm / mb.RPM_SCALE)
         engine.set_control_mode(control_mode)
         engine.set_engine_enable(safety_enable == mb.SAFETY_RUN)
+        engine.set_throttle(throttle_wot)
 
         # 2. Step physics.
         engine.tick(PHYSICS_DT)

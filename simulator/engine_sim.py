@@ -229,6 +229,8 @@ class DynoEngine:
         # inputs
         self._engine_enable = False
         self._prev_enable = False
+        self._throttle_wot = False     # binary throttle: False=idle, True=wide-open.
+                                       # Fail-safe default is idle (no drive torque).
         self._control_mode = mb.MODE_MANUAL
         self._target_rpm = 0.0         # logged only, not used by physics
         # safety
@@ -247,6 +249,12 @@ class DynoEngine:
     def set_engine_enable(self, enabled: bool) -> None:
         """Run/stop (maps to HR_SAFETY_ENABLE: RUN=enabled, STOP=killed)."""
         self._engine_enable = bool(enabled)
+
+    def set_throttle(self, wide_open: bool) -> None:
+        """Binary throttle (maps to the THROTTLE coil): True=wide-open (WOT, full
+        torque curve), False=idle (no drive torque -> friction/coastdown brings
+        RPM down to idle). Proportional throttle is future work."""
+        self._throttle_wot = bool(wide_open)
 
     def set_control_mode(self, mode: int) -> None:
         """Record control mode. The PLC owns the control strategy; the sim only
@@ -270,10 +278,13 @@ class DynoEngine:
             self._limiter_active = False
 
     def engine_torque(self) -> float:
-        """Driving torque (ft-lbs). Zero when stopped or when the spark cut is
-        active (limiter latched). Otherwise looked up on the published curve."""
+        """Driving torque (ft-lbs). Zero when stopped, at idle throttle, or when
+        the spark cut is active (limiter latched). At wide-open throttle it is
+        looked up on the published WOT curve (the only mode modelled)."""
         if not self._engine_enable:
             return 0.0
+        if not self._throttle_wot:
+            return 0.0          # idle throttle: no combustion drive torque
         if self._limiter_active:
             return 0.0
         return interpolate_torque(self._rpm)
@@ -355,10 +366,11 @@ class DynoEngine:
         # braking decelerates it whenever it is NOT making combustion power. The
         # published curve is already net-of-friction, so we apply this term ONLY
         # off-power to avoid double-counting -- which keeps the WOT path below
-        # byte-identical to the validated sweep. "Firing" here == engine enabled
-        # (Step 3 will additionally require the throttle wide-open). Without this
-        # term a disabled-but-spinning engine coasts forever (the run-43 bug).
-        firing = self._engine_enable
+        # byte-identical to the validated sweep. "Firing" == enabled AND throttle
+        # wide-open; at idle throttle or when disabled the engine makes no drive
+        # torque and friction (plus any brake) brings RPM down. Without this term
+        # a disabled/idling-but-spinning engine coasts forever (the run-43 bug).
+        firing = self._engine_enable and self._throttle_wot
         friction_tq = 0.0 if firing else self._friction_torque()
         net_torque_ftlbs = eng_tq - self._pump_load - friction_tq
 
@@ -368,6 +380,15 @@ class DynoEngine:
         self._rpm += angular_accel * dt * RAD_PER_SEC_TO_RPM
         if self._rpm < 0.0:
             self._rpm = 0.0
+
+        # Idle governor: a RUNNING engine (enabled) does not drop below idle --
+        # the idle circuit sustains IDLE_RPM even at idle throttle, so off-throttle
+        # the engine decays to a low idle and sits there (it does not stall or coast
+        # at the limiter). A DISABLED engine has no idle and coasts to rest. The WOT
+        # brake-capacity floor (~2510 RPM) sits above IDLE_RPM, so this floor never
+        # bites during a sweep.
+        if self._engine_enable and self._rpm < IDLE_RPM:
+            self._rpm = IDLE_RPM
 
         # 3b. Hard RPM ceiling: physics should keep us below this, but if any
         #     pathological combination of torque/load/dt produces overshoot,
