@@ -19,6 +19,7 @@ const UNIT_ID = 1; // OpenPLC slave id (simulator/modbus_map.py UNIT_ID)
 
 // OpenPLC holding-register addresses == %QW offsets. Mirror of
 // plc/register_map.md (the contract).
+const ADDR_VALVE_CMD = 100; // %QW100 40001 VALVE_POSITION_CMD (% x100)
 const ADDR_TARGET_RPM = 101; // %QW101 40002 TARGET_RPM
 const ADDR_CONTROL_MODE = 102; // %QW102 40003 CONTROL_MODE
 const ADDR_SAFETY_ENABLE = 103; // %QW103 40004 SAFETY_ENABLE
@@ -28,10 +29,15 @@ const ADDR_SWEEP_STEP = 106; // %QW106 40007 SWEEP_STEP_RPM
 const ADDR_SWEEP_DWELL = 107; // %QW107 40008 SWEEP_DWELL_MS
 // SWEEP_STATE is %QW108 (40009); read at offset 7 of the 101..108 block.
 
-const MODE_PID = 1; // CONTROL_MODE: 0=manual 1=PID 2=sweep
+const MODE_MANUAL = 0; // CONTROL_MODE: 0=manual 1=PID 2=sweep
+const MODE_PID = 1;
 const MODE_SWEEP = 2;
 const SAFETY_RUN = 1;
 const SAFETY_ESTOP = 0;
+
+const COIL_THROTTLE = 0; // %QX0.0 coil 00001 — binary throttle (false=idle, true=WOT)
+const VALVE_SCALE = 100; // % x100 wire scaling (register_map.md)
+const MANUAL_VALVE = { lo: 0, hi: 100, dflt: 0 }; // manual valve override %
 
 const TIMEOUT_MS = 3000;
 
@@ -59,7 +65,14 @@ function isProvided(v: unknown): boolean {
   return v !== undefined && v !== null && Number.isFinite(Number(v));
 }
 
-type Action = "start" | "stop" | "estop" | "start_sweep" | "set_target";
+type Action =
+  | "start"
+  | "stop"
+  | "estop"
+  | "start_sweep"
+  | "set_target"
+  | "set_throttle"
+  | "set_valve";
 
 interface Readback {
   target_rpm: number;
@@ -70,6 +83,7 @@ interface Readback {
   sweep_step: number;
   sweep_dwell: number;
   sweep_state: number; // 0 idle / 1 running / 2 complete
+  throttle: number; // 0 idle / 1 wide-open (THROTTLE coil)
 }
 
 async function withClient<T>(fn: (c: ModbusRTU) => Promise<T>): Promise<T> {
@@ -93,6 +107,13 @@ async function withClient<T>(fn: (c: ModbusRTU) => Promise<T>): Promise<T> {
 async function readback(client: ModbusRTU): Promise<Readback> {
   const rb = await client.readHoldingRegisters(ADDR_TARGET_RPM, 8);
   const d = rb.data;
+  let throttle = 0;
+  try {
+    const tc = await client.readCoils(COIL_THROTTLE, 1);
+    throttle = tc.data[0] ? 1 : 0;
+  } catch {
+    /* coil may be unmapped on a stale OpenPLC config; report idle */
+  }
   return {
     target_rpm: d[0],
     control_mode: d[1],
@@ -102,6 +123,7 @@ async function readback(client: ModbusRTU): Promise<Readback> {
     sweep_step: d[5],
     sweep_dwell: d[6],
     sweep_state: d[7],
+    throttle,
   };
 }
 
@@ -129,6 +151,8 @@ export async function POST(req: NextRequest) {
     end?: unknown;
     step?: unknown;
     dwell?: unknown;
+    throttle?: unknown;
+    valve?: unknown;
   };
   try {
     body = await req.json();
@@ -137,15 +161,12 @@ export async function POST(req: NextRequest) {
   }
 
   const action = body.action as Action | undefined;
-  if (
-    action !== "start" &&
-    action !== "stop" &&
-    action !== "estop" &&
-    action !== "start_sweep" &&
-    action !== "set_target"
-  ) {
+  const VALID: Action[] = [
+    "start", "stop", "estop", "start_sweep", "set_target", "set_throttle", "set_valve",
+  ];
+  if (!action || !VALID.includes(action)) {
     return NextResponse.json(
-      { error: 'action must be "start", "stop", "estop", "start_sweep", or "set_target"' },
+      { error: `action must be one of: ${VALID.join(", ")}` },
       { status: 400 },
     );
   }
@@ -204,6 +225,21 @@ export async function POST(req: NextRequest) {
         ]); // 104..107
         await client.writeRegister(ADDR_CONTROL_MODE, MODE_SWEEP);
         await client.writeRegister(ADDR_SAFETY_ENABLE, SAFETY_RUN);
+      } else if (action === "set_throttle") {
+        // Operator accelerator / lift-off: write the THROTTLE coil only. In MANUAL
+        // mode the PLC passes it to the sim; in PID/sweep the PLC forces WOT, so
+        // this is overridden during an automated run (no conflict). Coerce to bool.
+        await client.writeCoil(COIL_THROTTLE, Boolean(body.throttle));
+      } else if (action === "set_valve") {
+        // Manual brake-valve override (diagnostics). Switch to MANUAL mode and
+        // enable, then write the valve. CONTROL_MODE is mutually exclusive, so
+        // entering MANUAL stops the PID/sweep from driving the valve -- the slider
+        // cannot fight the PID. The UI also disables the slider during an automated
+        // run. Valve is % x100 on the wire.
+        const valvePct = clampInt(body.valve, MANUAL_VALVE.lo, MANUAL_VALVE.hi, MANUAL_VALVE.dflt);
+        await client.writeRegister(ADDR_CONTROL_MODE, MODE_MANUAL);
+        await client.writeRegister(ADDR_SAFETY_ENABLE, SAFETY_RUN);
+        await client.writeRegister(ADDR_VALVE_CMD, valvePct * VALVE_SCALE);
       } else {
         // stop AND estop: drop the master enable. The PLC interlock forces the
         // valve to 0 on SAFETY_ENABLE=0, so we do NOT write the valve here. This

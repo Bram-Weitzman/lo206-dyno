@@ -34,6 +34,7 @@ interface CommandReadback {
   sweep_step: number;
   sweep_dwell: number;
   sweep_state: number; // 0 idle / 1 running / 2 complete
+  throttle: number; // 0 idle / 1 wide-open (THROTTLE coil)
 }
 
 const RUN_POLL_MS = 1500;
@@ -74,6 +75,9 @@ export default function OperatorControls() {
   // True only while WE are running a sweep — guards auto-close so a stale
   // SWEEP_STATE=2 from a previous sweep cannot close an unrelated run.
   const [sweepActive, setSweepActive] = useState(false);
+
+  // Manual diagnostics: brake-valve override slider value (%).
+  const [manualValve, setManualValve] = useState(0);
 
   const alive = useRef(true);
 
@@ -272,6 +276,43 @@ export default function OperatorControls() {
     }
   }, [postCommand]);
 
+  // Manual throttle (accelerator / lift-off): toggle the THROTTLE coil. Writes
+  // ONLY the coil. During a PID/sweep run the PLC forces WOT, so this is only
+  // meaningful in manual/idle; the button is disabled while an automated run is
+  // open (see disable gate below).
+  const onToggleThrottle = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = readback?.throttle === 1 ? false : true;
+      const rb = await postCommand({ action: "set_throttle", throttle: next });
+      setStatus(`Throttle ${rb.throttle === 1 ? "WIDE-OPEN" : "idle"}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [readback, postCommand]);
+
+  // Manual brake-valve override (diagnostics). Sends CONTROL_MODE=manual +
+  // enable + valve%, so it is mutually exclusive with PID/sweep -- it cannot
+  // fight the PID. Disabled while an automated run is open.
+  const onSetValve = useCallback(
+    async (pct: number) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const rb = await postCommand({ action: "set_valve", valve: pct });
+        setStatus(`Manual valve ${pct}% · mode ${MODE_LABELS[rb.control_mode]}`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [postCommand],
+  );
+
   const runOpen = openRun !== null;
   const pidHolding =
     !sweepActive &&
@@ -284,6 +325,11 @@ export default function OperatorControls() {
   // control_mode === 1 means cross-reload during a sweep run the button stays
   // hidden, and avoids briefly showing it before the first poll lands.
   const pidRunOpen = runOpen && !sweepActive && readback?.control_mode === 1;
+
+  // Manual throttle + valve are locked out while an automated run (PID or sweep)
+  // is active, so the manual controls cannot fight the closed loop. (set_valve
+  // also forces CONTROL_MODE=manual server-side, a second guard.)
+  const manualLocked = sweepActive || (runOpen && readback?.control_mode !== 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -480,6 +526,70 @@ export default function OperatorControls() {
           Walks RPM up the band, dwelling at each step so torque settles, then ends
           itself and auto-closes the run. Brake-capacity floor ~3360 RPM (clutch
           removed); starting below it just saturates the low steps.
+        </p>
+      </div>
+
+      {/* Row 4: manual / diagnostics — binary throttle + manual valve override */}
+      <div className="flex flex-col gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
+            Manual / diagnostics
+          </h3>
+          {readback && (
+            <span
+              className={`font-mono text-xs ${readback.throttle === 1 ? "text-orange-400" : "text-zinc-500"}`}
+            >
+              throttle {readback.throttle === 1 ? "WIDE-OPEN" : "idle"}
+            </span>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-end gap-4">
+          {/* Binary throttle: tap to WOT, tap again to idle. */}
+          <button
+            type="button"
+            onClick={onToggleThrottle}
+            disabled={manualLocked || busy}
+            className={`rounded-md px-5 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500 ${
+              readback?.throttle === 1
+                ? "bg-orange-600 hover:bg-orange-500"
+                : "bg-zinc-700 hover:bg-zinc-600"
+            }`}
+          >
+            {readback?.throttle === 1 ? "↓ Lift off (idle)" : "↑ Accelerator (WOT)"}
+          </button>
+
+          {/* Manual brake-valve override slider + deliberate Apply button. */}
+          <label className="flex min-w-[16rem] flex-1 flex-col gap-1 text-xs text-zinc-400">
+            Manual valve: <span className="font-mono text-zinc-200">{manualValve}%</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={manualValve}
+              disabled={manualLocked}
+              onChange={(e) => setManualValve(Number(e.target.value))}
+              className="accent-orange-500 disabled:opacity-40"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => onSetValve(manualValve)}
+            disabled={manualLocked || busy}
+            className="rounded-md bg-zinc-700 px-5 py-2.5 text-sm font-semibold text-zinc-100 transition hover:bg-zinc-600 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
+          >
+            Apply valve
+          </button>
+        </div>
+        <p className="text-xs text-zinc-600">
+          Diagnostics only. The throttle button toggles the engine accelerator
+          (wide-open vs idle); at idle the engine makes no power and coasts down.
+          The manual valve applies brake directly — it sends CONTROL_MODE=manual,
+          which is mutually exclusive with PID/sweep, so it cannot fight the PID.
+          {manualLocked
+            ? " Disabled now: an automated (PID/sweep) run is active — stop it first."
+            : ""}
         </p>
       </div>
     </div>
