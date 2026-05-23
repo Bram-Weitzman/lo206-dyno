@@ -232,7 +232,55 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-### Session 2026-05-23 (newest) -- PID retuned + trips raised + sweep VERIFIED
+### Session 2026-05-23 (newest) -- Coastdown model + binary throttle; sweep RE-VERIFIED
+
+Fixed the run-43 freewheel-at-the-limiter failure and added engine throttle
+control. Root cause: the sim had no friction, so a disabled/unloaded engine
+coasted forever near 6000 RPM; a sweep started against that brake-grabbed past
+the 1700 trip and faulted. **PID gains, pressure trips, and pump/torque physics
+were NOT touched.**
+
+- **Coastdown / friction (`engine_sim.py`, commit `481fbd1`):** engine internal
+  friction + pumping/compression braking, viscous + static
+  (`FRICTION_VISCOUS_FTLB_PER_RPM = 0.0016`, `FRICTION_STATIC_FTLB = 1.5`,
+  calibratable). Coasts 6000→2500 RPM in ~1.7 s unloaded. Applied **only
+  off-power** (engine not firing) so the WOT path -- and the validated sweep
+  physics -- are byte-identical (the curve is already net-of-friction).
+- **Binary throttle** (contract `ef1cb96`, sim+plc `c133b38`, addr fix `20e5263`):
+  a **THROTTLE coil** (idle vs wide-open). Sim coil 0; **PLC located `%QX100.0`**;
+  **:502 coil address 800** (the dashboard read/writes this). At idle the engine
+  makes NO drive torque → friction/coastdown brings RPM to a low idle (idle
+  governor holds IDLE_RPM while enabled); at WOT it follows the existing curve.
+  PLC drives it fail-safe: idle on startup/fault/disable, forced WOT when a
+  PID/sweep run is armed, operator-owned in MANUAL mode. **This is BINARY only --
+  a precursor to, NOT a replacement for, the post-interview proportional-throttle
+  / two-axis (throttle × brake) work.**
+- **GUI (`1cbc40b`):** Manual/diagnostics panel -- throttle accelerator/lift-off
+  button (writes the coil) + manual valve override slider (0-100%, deliberate
+  Apply). Both disabled while a PID/sweep run is open, and `set_valve` forces
+  CONTROL_MODE=manual (mutually exclusive with PID/sweep), so they cannot fight
+  the PID.
+- **OpenPLC runtime config changed (NOT version-controlled -- see bring-up
+  notes):** the slave device gained a **Coils-Write block (start 0, size 1)** so
+  `%QX100.0` mirrors to sim coil 0. Without it the throttle never reaches the sim.
+
+**RE-VERIFIED end-to-end (remote-equivalent, via the dashboard API → OpenPLC :502):**
+- (a) idle throttle → engine sits at low idle **~2500 RPM**, NOT the limiter.
+- (b) lift throttle from WOT (revved to **6209**) → decelerates to idle (**2374**).
+- (c) clean stepped sweep **run 46** (`docs/verification/sweep_run46.csv`, 716
+  samples, 4000→6100 / step 400 / dwell 10 s): **no fault** (peak 1689 PSI),
+  auto-completed. Torque falls **9.74→7.56 ft-lb** (4000-6000); **HP rises
+  7.47 → peak 9.61 @ ~5600 → 8.60 @ 6000** (the ~8.6 HP top; 6100 is the
+  rev-limiter band, invalid). Matches the prior run-38 curve, now with the engine
+  properly fired by the throttle.
+
+**WHAT REMAINS:** real-hardware calibration (friction/gains/trips are sim
+values); **proportional throttle + two-axis throttle×brake mapping (post-
+interview)**; coil-drive choice; circuit procurement. Nothing is BLOCKED.
+
+---
+
+### Session 2026-05-23 -- PID retuned + trips raised + sweep VERIFIED
 
 The control loop is now tuned to the corrected brake model and a clean full-band
 verification sweep was captured -- the work the prior notes flagged as "next
