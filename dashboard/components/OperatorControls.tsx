@@ -15,30 +15,12 @@ import type { RunState } from "@/hooks/useRunState";
 //   Stop        -> /api/command stop  (SAFETY_ENABLE=0). Does NOT close the run.
 //   E-stop      -> /api/command estop (SAFETY_ENABLE=0), immediate, no confirm.
 //
-// All run-state (openRun, readback, phase, lockReason) and all Modbus I/O come
-// from the single useRunState() hook instance, passed in as `run`. This panel
-// owns NO run-state polling of its own — it only holds form-input + UI-feedback
-// state (target/sweep params, busy/status/error). See hooks/useRunState.ts.
-
-interface RunRow {
-  id: number;
-  started_at: string;
-  ended_at: string | null;
-  notes: string | null;
-  sample_count: number;
-}
-
-interface CommandReadback {
-  target_rpm: number;
-  control_mode: number;
-  safety_enable: number;
-  sweep_start: number;
-  sweep_end: number;
-  sweep_step: number;
-  sweep_dwell: number;
-  sweep_state: number; // 0 idle / 1 running / 2 complete
-  throttle: number; // 0 idle / 1 wide-open (THROTTLE coil)
-}
+// All run-state (openRun, readback, phase, lockReason) and the RunRow /
+// CommandReadback types come from the single useRunState() hook instance,
+// passed in as `run`. All Modbus I/O routes through the hook too. This panel
+// owns NO run-state polling and NO run-state types of its own — it only holds
+// form-input + UI-feedback state (target/sweep params, busy/status/error).
+// See hooks/useRunState.ts.
 
 const MODE_LABELS = ["Manual", "PID", "Sweep"];
 const SWEEP_STATE_LABELS = ["idle", "running", "complete"];
