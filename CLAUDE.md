@@ -18,30 +18,44 @@ The full software stack is complete and verified end-to-end on dyno-dev:
 - Dashboard: Next.js, live chart (RPM/torque/HP), run history, CSV export —
   verified 2026-05-21 with PLC holding 5000 RPM in PID mode
 - Clutch model REMOVED from the physics loop (2026-05-22): the bench dyno
-  measures the engine directly across the full rev range. New brake-capacity
-  floor ~3,360 RPM (re-probed after the Stock/Unrestricted 206 curve correction; ~3,135 under the old restricted curve; clutch-limited ~4,200 before that). This also resolved the old
-  below-engagement pressure/CHT inconsistency.
-- Hardware: procurement in progress — proportional valve now confirmed
-  (see docs/bom.md); all other hardware TBD
+  measures the engine directly across the full rev range. This also resolved the
+  old below-engagement pressure/CHT inconsistency.
+- Brake model RE-DERIVED from spec'd hardware (2026-05-23): the linear
+  PUMP_LOAD_GAIN placeholder was replaced with physics from the 2.14 cu in/rev
+  pump + 2.909:1 gear set + non-compensated throttle valve. New torque-balance
+  floor ~2510 RPM (was ~3360 under the placeholder). See "Current session state".
+- Hardware: brake pump + valve TYPE + gear set now locked (see docs/bom.md);
+  exact part numbers, valve coil drive, and several line items still TBD.
 
 **Phase 4 (presentation/blog): not started, deadline May 29.**
 
-**Hydraulic circuit decisions locked (May 2026):**
-- Pump: 1.52 cu.in. gear pump, Princess Auto Item 8375446
-- Drive: #219 chain, 20T drive sprocket / 70T driven sprocket, 3.5:1 reduction
-  (same chain and ratio as the kart — reuses existing drivetrain components)
-- Pump shaft speed: 6,200 RPM engine → 1,771 RPM pump (well within 3,000 RPM rating)
-- Operating pressure revised to 500–700 PSI normal (3.5:1 ratio multiplies torque
-  at pump shaft to ~35 ft-lbs, requiring ~595 PSI at 1.52 cu.in. displacement)
-- Custom hub required: driven sprocket to 3/4 in. pump shaft — check if 70T #219
-  sprocket is available in 3/4 in. bore before machining a custom part
-- Operating pressure range: 500–700 PSI normal, 900 PSI software trip, 1,500 PSI mechanical relief
-- Back-pressure baseline: ~200 PSI (return-line relief valve, Item 8688939)
-- Note: OVERPRESSURE_TRIP_PSI in `simulator/modbus_map.py` is **900 PSI**
-  (applied in commit 0dd0a7a) to match the chain-drive (3.5:1) pressure model.
-- These values are reflected in `engine_sim.py` constants and `docs/bom.md`
-- Observed RPM floor at max braking (100% valve): ~3,360 RPM with the Stock/Unrestricted 206 curve
-  (was ~3,135 under the old restricted data; ~4,236 under the original 12.0 pump-load gain).
+**Hydraulic brake hardware locked (2026-05-22) — SUPERSEDES the old 1.52 cu.in. / chain design:**
+- **Brake pump:** fixed-displacement gear pump, **~2.14 cu in/rev, 3000 PSI** rated.
+  Candidate: Dalton Hydraulic. (Was: 1.52 cu.in. Princess Auto 8375446 — dropped.)
+- **Drive:** **22T engine / 64T pump gear set = 2.909:1 reduction.** Engine 2500 RPM
+  → pump 859 RPM; engine 6100 → pump 2097 RPM. (Was: #219 chain 20T/70T 3.5:1 — dropped.)
+- **Brake valve:** proportional **pressure/throttle control valve (NON-compensated)** —
+  builds back-pressure by restricting pump-outlet flow. Sun **FPCH**-class or Brand
+  **EFC**-class, rated flow ~3–6 GPM, pressure ≥3000 PSI. **NOT** a pressure-compensated
+  flow-control valve (that holds flow constant and would fight the brake — wrong part).
+  (Was: Sun RPGC-LBN proportional pressure-relief — dropped.)
+- **Three-tier pressure scheme:** **working ~1128 PSI / mechanical relief ~2000 PSI /
+  pump rating 3000 PSI.** Worked point: absorbing the engine's ~11 ft-lb low-end
+  torque needs ~32 ft-lb (384 in-lb) at the pump shaft (×2.909) = ~1128 PSI (~38% of
+  rating). Torque→pressure is speed-independent; only flow varies with RPM.
+- **Pump flow:** ~8.0 GPM at 2500 engine RPM → ~19.4 at 6100 (Q = 2.14 × pump_rpm / 231).
+  ⚠ The brief quoted 0.8–2.0 GPM, ~10× lower — flagged as a likely error (the 2.14
+  cu in/rev displacement is load-bearing for the torque/pressure math); affects valve
+  flow sizing. See `docs/bom.md`. VERIFY before purchasing the valve.
+- **Coil drive: TBD** — 12 V PWM vs 0–10 V amp card. Valve TYPE is locked; coil drive
+  is NOT chosen this session.
+- **Pressure transducer range** widened to **0–3000 PSI** (was 0–1500) for this scheme;
+  `PSI_REG_MAX` in `modbus_map.py` bumped 1500→3000 (behavior-neutral under current trips).
+- **Brake-capacity floor (new model):** torque-balance floor **~2510 RPM** (with trips
+  conceptually raised) — brake torque 11.1 = engine torque 11.1 ft-lb. (Was ~3360 under
+  the old PUMP_LOAD_GAIN=18.5 placeholder.) **But under the UNCHANGED trips the sim
+  faults at full braking (>900 PSI at ~2749 RPM) and runs to the limiter — no holdable
+  floor until the trips/PID are addressed next session.**
 
 ## Stack
 
@@ -93,21 +107,26 @@ must be changed *first*, deliberately, before either side.
 
 ## Known open questions
 
-- **Proportional valve**: RESOLVED — Sun Hydraulics RPGC-LBN confirmed; full
-  spec, sources, and cost in `docs/bom.md`. Remaining sub-decision: the driver
-  circuit (Option A custom MCP4725 DAC + DRV8871 vs Option B Sun PRZE-LBN amp
-  card), both specced in `docs/bom.md` — pick one before ordering.
+- **Proportional valve**: TYPE LOCKED (2026-05-22) — a proportional
+  **pressure/throttle control valve (non-compensated)**, Sun FPCH-class or Brand
+  EFC-class (NOT a pressure-compensated flow-control valve, and no longer the Sun
+  RPGC-LBN). Full spec + VERIFY-before-purchase list in `docs/bom.md`. **Coil
+  drive still TBD: 12 V PWM vs 0–10 V amp card — not picked this session.** Exact
+  part number + rated flow also TBD (tied to the pump-flow inconsistency below).
 - **Engine inertia / valve lag constants**: placeholders in `engine_sim.py`;
   need real values once we can bench-measure the engine and valve.
 - **Torque curve fidelity**: we currently use published B&S 206 Racing data for the Stock/Unrestricted 206 slide (#555590, commonly called the black slide).
   Other slide configs are not yet digitized (see `docs/bom.md`).
 - **Safety thresholds**: RPM > 6500 remains a first-guess — confirm against
-  engine builder recommendations once on real hardware. PSI software trip:
-  `OVERPRESSURE_TRIP_PSI` in `simulator/modbus_map.py` is **900 PSI** (applied
-  in commit 0dd0a7a) to match the chain-drive (3.5:1) pressure model. System
-  relief valve (Princess Auto Item 8688947) is set at 1,500 PSI; the software
-  trip fires first. Back-pressure baseline is ~200 PSI (return-line relief, Item
-  8688939). Review the RPM trip threshold after first live runs.
+  engine builder recommendations once on real hardware. **PSI trips are STALE vs
+  the new pressure scheme and were deliberately NOT changed this session:** sim
+  `OVERPRESSURE_TRIP_PSI` (`modbus_map.py`) = **900 PSI** and PLC `PSI_TRIP_PSI`
+  (`dyno_control.st`) = **750 PSI**, both calibrated to the old 3.5:1 chain model.
+  Both now sit BELOW the new ~1128 PSI working point, so the sim faults at full
+  braking. **NEXT SESSION must review both against the new three-tier scheme
+  (working ~1128 / relief ~2000 / rating 3000)**, alongside the PID retune. The
+  ~2000 PSI mechanical relief replaces the old 1,500 PSI; the old ~200 PSI
+  return-line back-pressure valve is dropped (no baseline in the new model).
 - **AFR channel (30006)**: reserved but unpopulated — wideband O2 is a Phase 2
   hardware addition.
 - **Dashboard data path**: RESOLVED — the logger polls Modbus TCP and writes
@@ -180,8 +199,21 @@ CLUTCH_ENGAGEMENT_RPM = 3400  # RETAINED reference -- bypassed from physics 2026
 CLUTCH_LOCKUP_RPM = 4200      # RETAINED reference -- bypassed from physics 2026-05-22
 RPM_NOISE_BAND = 100          # APPLIED -- +/-RPM noise on output only, steady state from race data
 
+# engine_sim.py -- NEW brake model (2026-05-23), replaces PUMP_LOAD_GAIN placeholder
+GEAR_RATIO = 64.0 / 22.0      # 2.909:1; pump_rpm = engine_rpm / GEAR_RATIO; engine
+                              # brake torque = pump-shaft torque / GEAR_RATIO (NOT * --
+                              # the brief prose was inverted vs its own worked example)
+PUMP_DISP_CUIN = 2.14         # cu in/rev gear pump, 3000 PSI; VERIFY before purchase
+VALVE_ORIFICE_K = 17.8        # PSI/(GPM^2 * restriction^2); non-comp orifice, pinned to the
+                              # 1128 PSI @ valve100%/2500 RPM worked point; BENCH-MEASURE
+# pressure = VALVE_ORIFICE_K * (valve_act/100)^2 * flow_gpm^2 ; flow = 2.14*pump_rpm/231
+# brake_ftlb = pressure * PUMP_DISP_CUIN/(2*pi)/12/GEAR_RATIO  (1128 PSI -> 11.0 ft-lb)
+
 # simulator/modbus_map.py
-OVERPRESSURE_TRIP_PSI = 900   # APPLIED -- 3.5:1 chain drive, ~595 PSI normal operating
+PSI_REG_MAX = 3000            # APPLIED 2026-05-22 -- 0-3000 range for the 3-tier scheme
+OVERPRESSURE_TRIP_PSI = 900   # UNCHANGED this session -- STALE (old 3.5:1 model); now below
+                              # the ~1128 PSI working point, so the sim faults at full braking.
+                              # Review next session vs the ~2000 PSI relief (with the PID retune).
 ```
 
 ## Git author note
@@ -191,7 +223,80 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-### Session 2026-05-22 (newest) -- Torque curve corrected to Stock/Unrestricted 206 (#555590)
+### Session 2026-05-23 (newest) -- Brake hardware locked + sim brake model re-derived
+
+Locked two brake-hardware decisions and rebuilt the sim brake physics around
+them. This was a **docs + sim-model + contract** change only — **no PID retune,
+no safety-trip change, no verification sweep** (all explicitly next session).
+
+**Hardware locked** (full spec + VERIFY-before-purchase lists in `docs/bom.md`):
+- Brake pump: fixed-displacement gear pump, ~2.14 cu in/rev, 3000 PSI (Dalton
+  candidate). Replaces the dropped 1.52 cu.in. Princess Auto pump.
+- Drive: 22T engine / 64T pump gear set, **2.909:1**. Replaces the dropped #219
+  chain (3.5:1).
+- Brake valve: proportional **pressure/throttle control valve (NON-compensated)**,
+  Sun FPCH-class or Brand EFC-class. **NOT** a flow-control (compensated) valve —
+  that holds flow constant and would fight the brake. Replaces the dropped Sun
+  RPGC-LBN. **Coil drive (12 V PWM vs 0–10 V amp card) deliberately left TBD.**
+- Three-tier pressure: **working ~1128 / relief ~2000 / pump rating 3000 PSI.**
+
+**Sim brake model re-derived** (`engine_sim.py`, commit `4782021`): the linear
+`PUMP_LOAD_GAIN=18.5` placeholder (tuned to the dead chain design) is gone.
+New physics, every constant documented inline + flagged for bench measurement:
+```
+pump_rpm        = engine_rpm / 2.909
+pump_flow_gpm   = 2.14 * pump_rpm / 231
+pump_pressure   = VALVE_ORIFICE_K(17.8) * restriction^2 * flow^2   (non-comp orifice)
+engine_brake_ftlb = pump_pressure * 2.14/(2*pi) / 12 / 2.909
+```
+Anchored to the documented worked point and verified to reproduce it exactly
+(valve 100% @ 2500 RPM / 7.96 GPM → 1128 PSI → 11.0 ft-lb). Published pressure
+now caps at `PSI_REG_MAX` (3000), not the trip, so overpressure is visible to
+the trip. No back-pressure baseline (the new design has no return-line valve).
+16/16 sim tests pass (the old brake-floor test was split into two: one for the
+overpressure-fault-under-current-cap behavior, one for the trips-raised floor).
+
+**GEAR-DIRECTION CORRECTION (flagged, not silently changed):** the session
+brief's prose said "engine brake torque = pump-shaft torque × 2.909," which is
+**inverted** vs the brief's own worked example (11 ft-lb engine ↔ 32 ft-lb pump
+↔ 1128 PSI). Built to the physically correct **/2.909** (pump is the slow,
+high-torque side), which is what reproduces the worked point. Noted in code +
+`docs/bom.md`.
+
+**FLOW INCONSISTENCY (flagged, affects valve sizing):** the brief quotes pump
+flow as 0.8–2.0 GPM, but 2.14 cu in/rev at these pump speeds yields **~8–19 GPM**
+(~10× higher). The displacement is load-bearing for the torque/pressure math, so
+the flow figures look like the error. The sim uses the displacement-consistent
+flow. **Confirm pump displacement & flow before sizing the ~3–6 GPM valve.**
+
+**Floor re-probe (full throttle, valve 100%):**
+- **Under the UNCHANGED 900 PSI sim trip:** develops >900 PSI at ~2749 RPM →
+  latches a fault → valve forced shut → engine runs up to the ~6100 limiter.
+  **No holdable floor exists under the current trips.**
+- **Torque-balance floor (trips conceptually raised):** **~2510 RPM** (1141 PSI,
+  brake 11.1 = engine 11.1 ft-lb), vs the old placeholder's ~3360.
+
+**SWEEP_START_RPM defaults: NOT changed this session.** The current default (3400)
+still sits above the new ~2510 floor, and — more importantly — the sweep cannot
+run at all until the trips/PID are addressed (full braking faults immediately).
+Revisiting the default belongs with next session's retune, once a clean hold is
+possible. `register_map.md` + dashboard left as-is.
+
+**>>> NEXT SESSION (blocked on a deliberate control/safety change) <<<**
+The brake model changed, so before any client-doc HP figure is taken:
+1. **Retune the PID** for the new (much stronger) plant.
+2. **Review the pressure trips** against the three-tier scheme: sim
+   `OVERPRESSURE_TRIP_PSI` (900) and **PLC `PSI_TRIP_PSI` (750)** both sit below
+   the ~1128 PSI working point — raise them toward the ~2000 PSI relief. (Trips
+   were left untouched this session per scope.)
+3. **Re-run the verification sweep** and re-confirm the HP-rise curve end to end
+   (remote browser at http://10.20.99.55:3000, not curl).
+Until then the sim faults at full braking — expected, and the reason this work
+was sequenced "brake model correct first, then retune."
+
+---
+
+### Session 2026-05-22 -- Torque curve corrected to Stock/Unrestricted 206 (#555590)
 
 The simulator torque table held the WRONG slide data: restricted-slide values
 that fell to ~4.96 ft-lb at 6000 RPM and produced a physically wrong FALLING HP
