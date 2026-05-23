@@ -329,7 +329,9 @@ export default function OperatorControls() {
   // Manual throttle + valve are locked out while an automated run (PID or sweep)
   // is active, so the manual controls cannot fight the closed loop. (set_valve
   // also forces CONTROL_MODE=manual server-side, a second guard.)
-  const manualLocked = sweepActive || (runOpen && readback?.control_mode !== 0);
+  const manualLocked =
+    sweepActive ||
+    (runOpen && readback?.control_mode !== 0 && readback?.safety_enable === 1);
 
   return (
     <div className="flex flex-col gap-4">
