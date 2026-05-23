@@ -1,4 +1,4 @@
-"""Tests for the LO206 torque-curve interpolation (Black Slide .520).
+"""Tests for the LO206 torque-curve interpolation (Stock/Unrestricted 206 slide).
 
 Run from the simulator/ directory:  pytest
 """
@@ -25,10 +25,10 @@ def test_exact_points_match_table():
 
 
 def test_midpoint_is_between_neighbors():
-    """3250 rpm sits between 3000 (9.39) and 3500 (9.83)."""
+    """3250 rpm sits between 3000 (11.12) and 3500 (9.83)."""
     val = interpolate_torque(3250)
-    assert 9.39 < val < 9.83
-    assert abs(val - (9.39 + 9.83) / 2) < 1e-6
+    assert 9.83 < val < 11.12
+    assert abs(val - (11.12 + 9.83) / 2) < 1e-6
 
 
 def test_zero_below_2000():
@@ -42,20 +42,21 @@ def test_zero_below_2000():
 
 
 def test_zero_at_and_above_6100():
-    """At or above RPM_TORQUE_CLAMP_ABOVE the spark cut has fired — torque is 0."""
+    """At or above RPM_TORQUE_CLAMP_ABOVE the spark cut has fired -- torque is 0."""
     assert RPM_TORQUE_CLAMP_ABOVE == 6100.0
     assert interpolate_torque(6100) == 0.0
     assert interpolate_torque(6200) == 0.0  # draft/push overshoot scenario
     assert interpolate_torque(6500) == 0.0
     assert interpolate_torque(9000) == 0.0
-    # Just below the limiter we still interpolate from the table (6000 = 4.96).
+    # Just below the limiter we still interpolate from the table (6000 = 7.52).
     assert interpolate_torque(6099.9) == TORQUE_CURVE_FT_LBS[-1]
 
 
 def test_peak_torque_region():
-    """Published peak torque is at 3500 rpm for the .520 Black Slide."""
+    """Published peak torque is at 2500 rpm for the Stock/Unrestricted 206 slide
+    (strong low-end torque; tapers across the band)."""
     peak_rpm, _ = max(ACTIVE_CURVE, key=lambda p: p[1])
-    assert peak_rpm == 3500
+    assert peak_rpm == 2500
     assert interpolate_torque(3500) >= interpolate_torque(4500)
 
 
