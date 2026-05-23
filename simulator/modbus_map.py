@@ -81,7 +81,10 @@ AFR_NOMINAL_X10 = 147   # 14.7:1 stoich placeholder (no wideband O2 in Phase 1)
 # --- Register engineering ranges (clamp before publishing, per contract) ---
 RPM_REG_MAX    = 7000    # 30001 range 0-7000 (extends past 6100 so overspeed is visible)
 TORQUE_REG_MAX = 150     # 30002 range 0-150  (= 15.0 ft-lbs x10)
-PSI_REG_MAX    = 1500    # 30003 range 0-1500
+PSI_REG_MAX    = 3000    # 30003 range 0-3000 (3-tier scheme: working ~1128 /
+                         # relief ~2000 / pump rating 3000; see register_map.md).
+                         # Behavior-neutral under the unchanged trips (sim 900 /
+                         # PLC 750), which cap/fault pressure well below 1500.
 CHT_REG_MAX    = 300     # 30004 range 0-300
 VALVE_REG_MAX  = 10000   # 30005 range 0-10000 (= 100.00%)
 AFR_REG_MIN    = 100     # 30006 range 100-200

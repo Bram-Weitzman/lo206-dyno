@@ -31,7 +31,7 @@ directly in manual mode). The simulator treats all four as read-only inputs.
 
 | Address | Name               | Type   | Range       | Units / scaling                          |
 |---------|--------------------|--------|-------------|------------------------------------------|
-| 40001   | VALVE_POSITION_CMD | uint16 | 0 - 10000   | Commanded valve position, scaled 0.0-100.0% (10000 = 100.00%) |
+| 40001   | VALVE_POSITION_CMD | uint16 | 0 - 10000   | Commanded brake-valve restriction, scaled 0.0-100.0% (10000 = 100.00%). 0% = valve open / minimum back-pressure; 100% = maximum restriction / maximum back-pressure. |
 | 40002   | TARGET_RPM         | uint16 | 0 - 6500    | Target engine RPM for PID/sweep modes    |
 | 40003   | CONTROL_MODE       | uint16 | 0 - 2       | 0 = manual, 1 = PID hold, 2 = sweep      |
 | 40004   | SAFETY_ENABLE      | uint16 | 0 - 1       | 0 = e-stop (force valve closed), 1 = run |
@@ -40,7 +40,15 @@ directly in manual mode). The simulator treats all four as read-only inputs.
 - **40001 VALVE_POSITION_CMD** — the single actuator output, and the only
   holding register the PLC *computes*. Scaled x100 so the controller can command
   0.01% resolution without floats on the wire. The sim applies valve *lag*
-  before this becomes the actual position (see 30005).
+  before this becomes the actual position (see 30005). **Physical meaning
+  (2026-05-22): a restriction / back-pressure command into the spec'd
+  proportional pressure/throttle (non-compensated) valve** (`docs/bom.md`).
+  Higher command = more outlet restriction = higher pump-outlet pressure = more
+  brake torque = lower RPM. The 0-100% range, x100 scaling, and control polarity
+  (higher = more braking) are **unchanged** — only the actuator's physical
+  identity is now fixed, so no PLC or sim code change is implied by this register.
+  The driver translating this command to coil current (12 V PWM vs 0-10 V amp
+  card) is still TBD.
 - **40002 TARGET_RPM** — the speed setpoint, with **mode-scoped ownership**:
   - In **PID mode (1)** the OPERATOR owns it (set via the HMI / dashboard); the
     PLC reads it and holds it.
@@ -111,7 +119,7 @@ The PLC must treat these as read-only.
 |---------|--------------------|--------|-------------|---------------------------------------------------|
 | 30001   | ENGINE_RPM         | uint16 | 0 - 7000    | Engine speed, RPM (1:1)                           |
 | 30002   | TORQUE_FTLBS_x10   | uint16 | 0 - 150     | Torque, scaled x10 (105 = 10.5 ft-lbs)            |
-| 30003   | HYDRAULIC_PSI      | uint16 | 0 - 1500    | Hydraulic brake pressure, PSI (1:1)               |
+| 30003   | HYDRAULIC_PSI      | uint16 | 0 - 3000    | Hydraulic brake pressure, PSI (1:1)               |
 | 30004   | HEAD_TEMP_C        | uint16 | 0 - 300     | Cylinder head temperature, degrees C (1:1)        |
 | 30005   | VALVE_POSITION_ACT | uint16 | 0 - 10000   | Actual valve position, scaled 0.0-100.0% (reflects lag) |
 | 30006   | AFR_x10            | uint16 | 100 - 200   | Air/fuel ratio, scaled x10 (147 = 14.7) — reserved |
@@ -127,7 +135,14 @@ The PLC must treat these as read-only.
   derives this from the torque curve at the current RPM and load. Logged by the
   PLC; not used in the control law.
 - **30003 HYDRAULIC_PSI** — brake circuit pressure. Feeds the safety interlock
-  (over-pressure trip).
+  (over-pressure trip). **Range widened to 0-3000 PSI (2026-05-22)** for the
+  spec'd brake hardware's three-tier pressure scheme: **working ~1128 PSI /
+  mechanical relief ~2000 PSI / pump rating 3000 PSI** (`docs/bom.md`). Code:
+  `PSI_REG_MAX` in `simulator/modbus_map.py` is bumped 1500 → 3000 to match this
+  range (the contract doc and code stay in sync per this file's header). This is
+  **behavior-neutral today**: the unchanged overpressure trips (sim
+  `OVERPRESSURE_TRIP_PSI` = 900, PLC `PSI_TRIP_PSI` = 750) cap/fault the pressure
+  well below 1500, so nothing is published above 1500 yet. See Safety trip limits.
 - **30004 HEAD_TEMP_C** — thermal model output; slow-moving (degC, 1:1 — **not**
   scaled). Feeds the over-temperature trip.
 - **30005 VALVE_POSITION_ACT** — the *actual* valve position after lag, distinct
@@ -159,11 +174,23 @@ trust the status word alone).
 | Limit                  | Value     | Source constant         | Checked against |
 |------------------------|-----------|-------------------------|-----------------|
 | Overspeed              | 6500 RPM  | (PLC `RPM_TRIP_RPM`)    | 30001 ENGINE_RPM |
-| Over-pressure          | 750 PSI   | `OVERPRESSURE_TRIP_PSI` | 30003 HYDRAULIC_PSI |
+| Over-pressure (sim)    | 900 PSI   | `OVERPRESSURE_TRIP_PSI` (`simulator/modbus_map.py`) | 30003 HYDRAULIC_PSI |
+| Over-pressure (PLC)    | 750 PSI   | `PSI_TRIP_PSI` (`dyno_control.st`) | 30003 HYDRAULIC_PSI |
 | Over-temperature       | 250 °C    | `OVERTEMP_TRIP_C`       | 30004 HEAD_TEMP_C |
 
 > The PLC trip thresholds are flagged `(* TODO: calibrate against real hardware *)`
 > in `dyno_control.st`. Tune them on the sim, then verify against the real rig.
+
+> **Three-tier pressure scheme (spec'd brake hardware, 2026-05-22):** the brake
+> circuit's design pressures are **working ~1128 PSI / mechanical relief ~2000 PSI
+> / pump rating 3000 PSI** (`docs/bom.md`). The two overpressure trips above
+> (sim 900, PLC 750) currently sit **below the ~1128 PSI working point** — they
+> were calibrated to the old 3.5:1 chain-drive / 1.52 cu.in. pressure model and
+> are **deliberately NOT changed this session.** With the new physically-grounded
+> brake model (`engine_sim.py`), full braking develops ~1128+ PSI and therefore
+> trips the sim immediately — expected, and to be resolved next session by
+> retuning the PID for the new plant and raising the trips against the ~2000 PSI
+> relief. Until then the sim cannot hold the upper band.
 
 ---
 
