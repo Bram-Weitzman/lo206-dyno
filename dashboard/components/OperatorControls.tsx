@@ -44,7 +44,7 @@ const SWEEP_STATE_LABELS = ["idle", "running", "complete"];
 // Must match plc/register_map.md (the contract). The API route and the PLC clamp
 // too; this is the first line.
 const LIMITS = {
-  pid: { lo: 3200, hi: 6100 }, // PID hold target band (floor ~3135, redline 6100)
+  pid: { lo: 3200, hi: 6100 }, // PID hold target band (re-probed floor ~3360; a target below it sits at the floor; redline 6100)
   start: { lo: 2500, hi: 6100 },
   end: { lo: 2500, hi: 6100 },
   step: { lo: 100, hi: 1000 },
@@ -66,8 +66,8 @@ export default function OperatorControls() {
   // PID hold target.
   const [pidTarget, setPidTarget] = useState(4000);
 
-  // Sweep params (defaults match register_map.md: floor-aware start 3200).
-  const [sweepStart, setSweepStart] = useState(3200);
+  // Sweep params (defaults match register_map.md: floor-aware start 3400).
+  const [sweepStart, setSweepStart] = useState(3400);
   const [sweepEnd, setSweepEnd] = useState(6100);
   const [sweepStep, setSweepStep] = useState(400);
   const [sweepDwell, setSweepDwell] = useState(2000);
@@ -398,7 +398,7 @@ export default function OperatorControls() {
         </div>
         <p className="text-xs text-zinc-600">
           Opens a run and holds a constant RPM via the PID. Usable band 3200-6100
-          RPM (brake-capacity floor ~3135 RPM). While a PID run is open, change
+          RPM (brake-capacity floor ~3360 RPM). While a PID run is open, change
           the target and click Update Target to retune the hold without ending
           the run.
         </p>
@@ -478,7 +478,7 @@ export default function OperatorControls() {
         </div>
         <p className="text-xs text-zinc-600">
           Walks RPM up the band, dwelling at each step so torque settles, then ends
-          itself and auto-closes the run. Brake-capacity floor ~3135 RPM (clutch
+          itself and auto-closes the run. Brake-capacity floor ~3360 RPM (clutch
           removed); starting below it just saturates the low steps.
         </p>
       </div>

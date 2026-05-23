@@ -38,14 +38,15 @@ const TIMEOUT_MS = 3000;
 // Sweep parameter clamps — MUST match plc/register_map.md (the contract). The
 // PLC clamps defensively too; the UI clamps as well. Belt and suspenders.
 const SWEEP_LIMITS = {
-  start: { lo: 2500, hi: 6100, dflt: 3200 },
+  start: { lo: 2500, hi: 6100, dflt: 3400 },
   end: { lo: 2500, hi: 6100, dflt: 6100 },
   step: { lo: 100, hi: 1000, dflt: 400 },
   dwell: { lo: 500, hi: 30000, dflt: 2000 },
 };
 
-// PID hold target band. Floor ~3135 RPM is brake-capacity-limited (clutch
-// removed, see CLAUDE.md); 3200 keeps the first hold above it. 6100 = limiter.
+// PID hold target band. Re-probed floor ~3360 RPM is brake-capacity-limited
+// (clutch removed + Stock/Unrestricted 206 curve, see CLAUDE.md); the dflt 4000
+// holds above it. A target below ~3360 just sits at the floor. 6100 = limiter.
 const PID_TARGET = { lo: 3200, hi: 6100, dflt: 4000 };
 
 function clampInt(v: unknown, lo: number, hi: number, dflt: number): number {

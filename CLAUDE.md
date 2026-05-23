@@ -19,7 +19,7 @@ The full software stack is complete and verified end-to-end on dyno-dev:
   verified 2026-05-21 with PLC holding 5000 RPM in PID mode
 - Clutch model REMOVED from the physics loop (2026-05-22): the bench dyno
   measures the engine directly across the full rev range. New brake-capacity
-  floor ~3,135 RPM (was clutch-limited ~4,200). This also resolved the old
+  floor ~3,360 RPM (re-probed after the Stock/Unrestricted 206 curve correction; ~3,135 under the old restricted curve; clutch-limited ~4,200 before that). This also resolved the old
   below-engagement pressure/CHT inconsistency.
 - Hardware: procurement in progress — proportional valve now confirmed
   (see docs/bom.md); all other hardware TBD
@@ -40,8 +40,8 @@ The full software stack is complete and verified end-to-end on dyno-dev:
 - Note: OVERPRESSURE_TRIP_PSI in `simulator/modbus_map.py` is **900 PSI**
   (applied in commit 0dd0a7a) to match the chain-drive (3.5:1) pressure model.
 - These values are reflected in `engine_sim.py` constants and `docs/bom.md`
-- Observed RPM floor at max braking (100% valve): ~3,135 RPM in the updated
-  simulator, down from ~4,236 RPM under the original 12.0 pump-load gain.
+- Observed RPM floor at max braking (100% valve): ~3,360 RPM with the Stock/Unrestricted 206 curve
+  (was ~3,135 under the old restricted data; ~4,236 under the original 12.0 pump-load gain).
 
 ## Stack
 
@@ -191,7 +191,52 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-### Session 2026-05-22 (latest) — PID target updatable MID-RUN from the dashboard
+### Session 2026-05-22 (newest) -- Torque curve corrected to Stock/Unrestricted 206 (#555590)
+
+The simulator torque table held the WRONG slide data: restricted-slide values
+that fell to ~4.96 ft-lb at 6000 RPM and produced a physically wrong FALLING HP
+curve (peak HP only ~7). A diagnostic had already confirmed the HP PATH is
+correct (HP = torque*RPM/5252, derived in the logger) -- the bug was the torque
+DATA. Replaced `simulator/torque_curve.py` `TORQUE_CURVE_FT_LBS` with the
+published B&S 206 Racing data for the **Stock/Unrestricted 206 slide (#555590,
+commonly called the black slide)**:
+
+| RPM   | 2500 | 3000 | 3500 | 4000 | 4500 | 5000 | 5500 | 6000 |
+|-------|------|------|------|------|------|------|------|------|
+| ft-lb |11.13 |11.12 | 9.83 | 9.76 | 9.09 | 9.45 | 9.45 | 7.52 |
+
+Table structure + interpolation unchanged; only the torque VALUES changed. HP
+stays derived in the logger -- no chart HP loaded anywhere. 15/15 sim tests pass
+(updated midpoint neighbours, the 6000-RPM comment, and the peak-torque RPM,
+which is now 2500).
+
+**6000-RPM point (7.52 ft-lb) -- kept as published, NOT smoothed.** No graph
+image exists in the repo to eyeball, so the call rested on the HP cross-check:
+7.52*6000/5252 = 8.59 HP, which matches the chart own HP column at 6000 and the
+LO206 ~8.8 HP rating. A gentle taper holding ~9.45 to 6000 would imply ~10.8 HP
+-- implausibly above rating. So the top-end dip is real, not a transcription
+artifact.
+
+**HP now RISES across the band** (computed from the new torque): ~6.5 HP at
+3400 -> ~9.0 at 5000 -> ~9.7 around 5500-5600 -> 8.59 HP at 6000. The whole-band
+trend climbs and peaks near the top, as physics expects -- the falling-HP bug is
+gone.
+
+**Floor re-probed:** full throttle + valve 100% now settles at **~3,360 RPM**
+(was ~3,135 under the old restricted curve). Higher low-end torque (11.13 vs
+9.06 at 2500) lets the engine resist the brake to a higher RPM. The floor-aware
+SWEEP_START_RPM DEFAULT was bumped 3200 -> 3400 (register_map.md + dashboard) so
+the default sweep starts just above the new floor; the 2500 lower CLAMP is
+unchanged.
+
+**VERIFICATION SWEEP PENDING (Step 4):** the clean stepped-sweep + CSV export
+from a remote browser has NOT yet been run. Curve fix, naming fix, and this
+re-probe are committed + pushed. Once a sweep confirms HP rises end-to-end with
+peak HP ~8.6, this pending note will be removed.
+
+---
+
+### Session 2026-05-22 (latest) -- PID target updatable MID-RUN from the dashboard
 
 The PID hold target can now be retuned **without ending the run.** In the
 **PID hold** panel, while a run is open the target number field and slider
