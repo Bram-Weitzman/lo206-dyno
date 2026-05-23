@@ -229,12 +229,15 @@ export default function OperatorControls({ run }: { run: RunState }) {
   const pidRunOpen = phase === "pid-armed" || phase === "pid-stopped-open";
   const inSweep = phase === "sweep-armed" || phase === "sweep-complete-open";
 
-  // Manual throttle + valve are locked out while an automated loop (PID or
-  // sweep) is armed, so the manual controls cannot fight the closed loop.
-  // (set_valve also forces CONTROL_MODE=manual server-side, a second guard.)
-  const manualLocked =
-    run.sweepActive ||
-    (runOpen && readback?.control_mode !== 0 && readback?.safety_enable === 1);
+  // Manual throttle + valve lock. lockReason comes straight from the hook,
+  // which derives it from the normalized run `phase` (non-null only in a
+  // *-armed phase) — NOT from raw readback fields. A poll freeze or transient
+  // backend error can therefore no longer leave the lock stuck on. This is the
+  // architectural fix for bug D (stale manual-lock). The hint text reuses
+  // lockReason verbatim. (set_valve also forces CONTROL_MODE=manual
+  // server-side, a second guard.)
+  const lockReason = run.lockReason;
+  const manualLocked = lockReason !== null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -492,9 +495,7 @@ export default function OperatorControls({ run }: { run: RunState }) {
           (wide-open vs idle); at idle the engine makes no power and coasts down.
           The manual valve applies brake directly — it sends CONTROL_MODE=manual,
           which is mutually exclusive with PID/sweep, so it cannot fight the PID.
-          {manualLocked
-            ? " Disabled now: an automated (PID/sweep) run is active — stop it first."
-            : ""}
+          {lockReason ? ` Disabled now: ${lockReason}.` : ""}
         </p>
       </div>
     </div>
