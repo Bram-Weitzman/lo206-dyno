@@ -64,13 +64,13 @@ into `torque_curve.py` to model the .440 restriction.
 | Pressure transducer 0-3000 PSI, 4-20mA — confirmed (range revised, see below) | $35 - 75         |
 | K-type thermocouple + MAX31855 interface          | $25 - 40         |
 | ADS1115 ADC                                       | $15              |
-| Proportional pressure/throttle control valve + body — spec'd (see below) | $300 - 500 (TBD) |
-| Valve driver — coil drive TBD (12 V PWM vs 0-10 V amp card) | $15 - 150 (TBD)  |
+| Proportional throttle cartridge valve (~30 GPM, ≥3000 PSI) + body — spec'd (see below) | $400 - 700 (TBD) |
+| Proportional valve amplifier card (current-controlled, dither) — recommended, TBD-spec | $80 - 200 (TBD)  |
 | Brake pump (2.14 cu in/rev gear pump, 3000 PSI) — spec'd (see below) | $TBD (verify)    |
 | Gear set (22T/64T kart gears, 2.909:1) + coupling/adapter — TBD-spec | $TBD             |
-| Hydraulic reservoir (heat-sized, see below) — TBD-spec | $TBD             |
-| System relief valve (set ~2000 PSI) — confirmed   | $70              |
-| Inlet / charge plumbing (flooded pump suction) — TBD-spec | $TBD             |
+| Hydraulic reservoir (multi-gallon, heat-sized, see below) — TBD-spec | $TBD             |
+| System relief valve (≥20 GPM, set ~2000 PSI) — TBD-spec | $80 - 150        |
+| Inlet / charge plumbing + #8/#10 hose for ~19 GPM — TBD-spec | $TBD             |
 | Hilliard Flame clutch — on hand (kart)            | $0               |
 | Torque arm mechanical assembly (axle stub, carriers, hub, arm) | $120 - 230       |
 | Wiring, enclosure, connectors, hydraulic fittings | $50 - 100        |
@@ -79,35 +79,44 @@ into `torque_curve.py` to model the .440 restriction.
 
 ### Cost driver
 
-The **proportional valve** is still the largest single electronic line item. The
-valve **type** is now locked — a proportional **pressure/throttle control valve**
-(non-compensated cartridge; Sun Hydraulics FPCH-class or Brand Hydraulics
-EFC-class). The exact part number, rated flow, and price remain to be confirmed
-with a distributor; see the **Proportional pressure/throttle control valve —
-SPEC'D** section below. The coil drive (12 V PWM vs 0-10 V amp card) is
-deliberately left TBD.
+The **proportional throttle valve + amplifier** is the largest electronic line
+item. The valve **type** is locked — an electro-proportional **throttle**
+cartridge (non-compensated), **rated ~30 GPM** so the 8–19.4 GPM operating window
+sits in its accurate mid-range; candidate families Sun FPFK-class, HydraForce, or
+Bosch Rexroth. Likely pilot-operated at this size. Exact part number, price, and
+coil drive (a current-controlled proportional amplifier card is recommended) are
+TBD; see the **Proportional throttle cartridge valve — SPEC'D** section.
 
-### Budget (recompute, 2026-05-22)
+**Size / weight driver.** The corrected 8–19 GPM circuit — a ~30 GPM valve, a
+≥20 GPM relief, a multi-gallon reservoir (sized for sustained heat), and larger
+#8/#10 plumbing — is the **size and weight driver of the whole build**, which
+matters directly for the transportable / trailer-mounted constraint.
 
-The brake-hardware re-spec replaced two previously-priced items (the 1.52 cu.in.
-Princess Auto pump and the Sun RPGC-LBN relief valve) with parts that are not yet
-priced from a source, and added several TBD-spec line items (gear set, reservoir,
-inlet/charge plumbing). **The subtotal is therefore an ESTIMATE, not a firm
-number.** Priced + on-hand items total roughly **$420–730 CAD** (Pi, load cell,
-RPM sensor, transducer, thermocouple, ADC, system relief, torque arm, wiring,
-clutch on-hand). The following are **unpriced** and must be quoted before the
-total is meaningful against the **sub-$1000 CAD** target:
+### Budget (recompute, 2026-05-23 — corrected flow)
+
+The brake-hardware re-spec replaced previously-priced items with parts not yet
+priced from a source, and the flow correction grew several of them (the valve is
+now ~30 GPM, the relief ≥20 GPM, the reservoir multi-gallon, plumbing larger).
+**The subtotal is therefore an ESTIMATE, not a firm number.** Priced + on-hand
+items total roughly **$350–650 CAD** (Pi, load cell, RPM sensor, transducer,
+thermocouple, ADC, torque arm, wiring, clutch on-hand). The following are
+**unpriced / TBD-spec** and must be quoted before the total is meaningful against
+the **sub-$1000 CAD** target:
 
 - Brake pump (2.14 cu in/rev, 3000 PSI gear pump — Dalton Hydraulic candidate)
-- Proportional pressure/throttle control valve + body (Sun FPCH / Brand EFC class)
-- Valve coil driver (12 V PWM circuit vs 0-10 V amp card — TBD)
+- Proportional throttle cartridge valve (~30 GPM, ≥3000 PSI) + body (~$400–700)
+- Proportional valve amplifier card (current-controlled, dither — ~$80–200)
 - Gear set (22T/64T) + shaft coupling/adapter
-- Hydraulic reservoir (heat-sized)
-- Inlet / charge plumbing for flooded pump suction
+- System relief valve (≥20 GPM, ~2000 PSI — ~$80–150)
+- Hydraulic reservoir (multi-gallon, heat-sized) + possible oil cooler
+- Inlet / charge plumbing + #8/#10 hose for ~19 GPM peak
 
-A realistic guess for the unpriced block is **~$500–800 CAD**, which would put the
-build **at or slightly over the $1000 CAD target** — confirm the pump and valve
-quotes first, as they dominate the uncertainty.
+A realistic guess for the unpriced block is **~$800–1300 CAD** (the 30 GPM valve
++ amplifier alone are a big share), which **likely pushes the build OVER the
+$1000 CAD target** once the larger valve, relief, reservoir, and plumbing are
+priced. Confirm the valve + amplifier + pump quotes first — they dominate both
+the cost and the uncertainty. This is a real budget pressure introduced by the
+corrected (10× higher) flow.
 
 ## Hydraulic circuit hardware (brake pump + drive)
 
@@ -145,16 +154,15 @@ These items size to the LO206's output (~8–11 ft-lbs torque, ~8.8 HP).
   at ~**1128 PSI** — only ~**38% of the 3000 PSI rating**. Pressure to hold a
   given torque does not change with RPM; only flow does.
 - **Flow across the band (per Q = disp × pump_RPM / 231):** ~**8.0 GPM at 2500
-  engine RPM**, rising to ~**19.4 GPM at 6100**.
-  > ⚠ **FLOW INCONSISTENCY — resolve before sizing the valve & reservoir.** The
-  > project brief quotes the operating flow as **0.80–1.94 GPM**, ~10× lower than
-  > the 8–19 GPM that 2.14 cu in/rev actually produces at these pump speeds. The
-  > 2.14 cu in/rev displacement is load-bearing (it is what makes the 1128 PSI ↔
-  > 11 ft-lb worked point and the 3-tier pressure scheme self-consistent), so the
-  > **flow figures appear to be the error**, not the displacement. This matters:
-  > the valve flow-capacity selection (below) and the reservoir/cooling sizing
-  > both depend on real flow. **Confirm the pump's actual displacement and the
-  > resulting flow band with the distributor before buying the valve.**
+  engine RPM**, rising to ~**19.4 GPM at 6100**. This **8.0–19.4 GPM window** is
+  the verified operating flow and is what the valve, relief, reservoir, and
+  plumbing are now sized for.
+  > **FLOW CORRECTED (2026-05-23).** An earlier figure of 0.8–2.0 GPM was wrong by
+  > ~10× — most likely a 0.214-vs-2.14 cu in/rev displacement slip. The 2.14 cu
+  > in/rev displacement is load-bearing (it makes the 1128 PSI ↔ 11 ft-lb worked
+  > point and the 3-tier pressure scheme self-consistent) and is unchanged; the
+  > **flow figures were the error** and are fully superseded by the 8.0–19.4 GPM
+  > window above. The torque/pressure math has no flow term and is unaffected.
 - **VERIFY BEFORE PURCHASE:**
   - Exact displacement (cu in/rev) — confirm it is ~2.14, not a near value
   - 3000 PSI pressure rating (continuous, not burst)
@@ -179,29 +187,37 @@ These items size to the LO206's output (~8–11 ft-lbs torque, ~8.8 HP).
 - High-pressure side, **set ~2000 PSI** — the mechanical relief of the new
   three-tier scheme (working ~1128 / **relief ~2000** / pump rating 3000).
 - Protects pump and circuit from overpressure spikes above the working band.
-- Must pass at least full pump flow at relief (see the flow note above — size to
-  the *real* flow band, not the brief's 0.8–1.9 GPM figures).
+- **Rated ≥ 20 GPM** so it can pass full pump flow (peak ~19.4 GPM at 6100 RPM)
+  at relief without choking — sized to the verified 8–19.4 GPM window. The earlier
+  Princess Auto unit was kept only as a stand-in; a ≥20 GPM relief is TBD-spec.
 - Software/PLC overpressure trips are **not changed this session** (sim
   `OVERPRESSURE_TRIP_PSI` = 900, PLC `PSI_TRIP_PSI` = 750); they must be reviewed
   next session against this ~2000 PSI relief scheme.
 
 ### Hydraulic reservoir — notes (TBD-spec)
 
-- **Size for heat.** The dyno dumps the engine's full output as heat into the oil
+- **Size for flow AND heat.** Rule of thumb is a reservoir of ~2–3× pump flow per
+  minute for de-aeration/settling; at ~19 GPM peak that points to a **multi-gallon
+  tank (assume ~5–10 US gal as a starting figure)**, not a small reservoir.
+- **Heat rejection.** The dyno dumps the engine's full output as heat into the oil
   continuously during a sweep: ~**3.9 HP (≈2.9 kW) at the brake-capacity floor**
-  up to ~**6.3 HP (≈4.7 kW) near redline** (HP = torque × RPM / 5252 on the
-  Stock-206 curve). A small reservoir will heat-soak quickly; size the tank (and
-  consider a cooler) so oil temperature stays in range across a full sweep.
+  up to ~**5–6 HP (≈4–4.5 kW) near redline** (HP = torque × RPM / 5252 on the
+  Stock-206 curve). Even a multi-gallon tank heat-soaks under sustained sweeps, so
+  **an oil cooler (fan or air-blast) is likely required for back-to-back / long
+  sweeps**; a one-off short sweep may get by on tank mass alone. Flag for the build.
 - Confirm fluid type/viscosity, filtration, and breather.
 
 ### Inlet / charge plumbing — notes (TBD-spec)
 
-- The pump suction must be **flooded or low-pressure charged** to avoid
-  cavitation, *especially at the low-flow end* (~8 GPM at 2500 RPM, lower if the
-  flow inconsistency above resolves toward the brief's figures). Cavitation
-  damages gear pumps and corrupts the pressure (hence torque) reading.
-- Generously sized suction line, reservoir mounted at/above the pump inlet, and a
-  suction strainer rather than a restrictive filter on the inlet.
+- The pump suction must be **flooded or low-pressure charged** to avoid cavitation
+  across the **8–19.4 GPM** window; cavitation damages gear pumps and corrupts the
+  pressure (hence torque) reading. At ~19 GPM peak the suction is the bigger risk
+  than the low end.
+- **Hose/line sizing:** ~19 GPM peak puts the pressure and return lines in the
+  **#8 / #10 SAE (1/2"–5/8" ID) class, NOT #6** — undersized hose causes excess
+  velocity, pressure drop, and heat. Size suction even larger to keep velocity low.
+- Reservoir mounted at/above the pump inlet, with a suction strainer rather than a
+  restrictive inlet filter.
 
 ## Confirmed drivetrain hardware
 
@@ -593,39 +609,36 @@ No conflict — both can share the Pi's I2C bus (GPIO 2/3, pins 3/5).
 - TODO: on first hardware run, verify 4 mA live-zero reading with no pressure
   applied; calibrate PSI conversion against a known reference pressure
 
-## Proportional pressure/throttle control valve — SPEC'D
+## Proportional throttle cartridge valve — SPEC'D (sized for 8–19 GPM)
 
-The brake valve is a proportional **pressure/throttle control valve**
-(non-compensated cartridge). It builds back-pressure by **restricting the pump
-outlet flow** — higher command = more restriction = higher pump-outlet pressure =
-more engine braking torque = lower RPM, which is exactly what the PID loop closes
-on.
+The brake valve is an **electro-proportional THROTTLE cartridge valve**
+(non-compensated). It builds back-pressure by **restricting the pump outlet
+flow** — higher command = more restriction = higher pump-outlet pressure = more
+engine braking torque = lower RPM, which is exactly what the PID loop closes on.
 
 > **TERMINOLOGY — do not call this a "proportional flow-control valve."** A
 > proportional *flow-control* (pressure-**compensated**) valve holds a commanded
 > flow constant regardless of pressure — it would actively fight the brake and is
 > the **wrong** device here. What we want is a **non-compensated** proportional
-> pressure/throttle valve, which simply throttles the outlet so pressure rises
-> with flow and with closure. The two are easy to confuse by name; this is the
-> single most important spec to get right when ordering.
+> throttle, which simply throttles the outlet so pressure rises with flow and with
+> closure. The two are easy to confuse by name; this is the single most important
+> spec to get right when ordering.
 
 | Spec              | Value                                                          |
 |-------------------|----------------------------------------------------------------|
-| Type              | Proportional pressure/throttle control, **non-compensated**, cartridge |
-| Candidate classes | Sun Hydraulics **FPCH**-class or Brand Hydraulics **EFC**-class |
-| Rated flow        | ~3–6 GPM rated (puts the operating band in the accurate lower-mid range, clear of the ~0.25 GPM low-accuracy floor) — **see flow caveat below** |
-| Pressure rating   | ≥ 3000 PSI (covers the full 3-tier scheme to pump rating)      |
-| Coil drive        | **TBD** — 12 V PWM vs 0–10 V amp card (NOT chosen this session) |
+| Type              | Electro-proportional **throttle** cartridge, **non-compensated** (NOT a pressure-compensated flow-control valve) |
+| Candidate families| Sun Hydraulics **FPFK**-class, **HydraForce**, or **Bosch Rexroth** electro-proportional cartridges |
+| Rated capacity    | **~30 GPM** — so the **8.0–19.4 GPM** operating window sits in the bottom two-thirds of rated flow (mfr accuracy guidance), clear of the low-flow accuracy floor at the bottom of a valve's range |
+| Actuation         | Likely **PILOT-OPERATED** at this flow size (needs a minimum supply/pilot pressure to shift; adds slight lag) rather than direct-acting — confirm against the chosen part |
+| Pressure rating   | **≥ 3000 PSI** (covers the full 3-tier scheme to pump rating)  |
+| Coil drive        | **TBD** — recommend a current-controlled proportional **amplifier** with adjustable dither (~100–250 Hz), NOT raw PWM from the Pi (see Driver below). Not finalized this session. |
 | Operating pressure| ~1128 PSI working (38% of pump rating); develops up to ~2000 PSI before mechanical relief |
 
-> ⚠ **FLOW CAVEAT (read with the pump's flow note).** The ~3–6 GPM rated-flow
-> target was chosen against the brief's **0.8–2.0 GPM** operating band. But
-> 2.14 cu in/rev at the spec'd pump speeds produces **~8–19 GPM** (Q = disp ×
-> pump_RPM / 231). If the real flow is 8–19 GPM, a 3–6 GPM valve is **undersized**
-> and would be the dominant restriction even wide open. **Resolve the
-> pump-displacement-vs-flow inconsistency (see Brake pump notes) before selecting
-> the valve's rated flow.** The valve *type* (non-compensated pressure/throttle)
-> is locked regardless; only its flow size depends on this.
+The operating flow window is **8.0 GPM at 2500 engine RPM → 19.4 GPM at 6100**
+(Q = 2.14 cu in/rev × pump_RPM / 231, pump_RPM = engine_RPM / 2.909). A ~30 GPM
+valve keeps the whole window inside the accurate part of the valve's range. (The
+earlier ~3–6 GPM target came from a flow figure that was ~10× too low and is
+fully superseded — see the Brake pump flow note.)
 
 ### Why this valve type — notes
 
@@ -634,16 +647,22 @@ on.
   (command). That is the brake authority the PID modulates.
 - A pressure-**compensated** flow-control valve would instead hold flow constant
   and resist the brake — wrong device. (This is the terminology trap above.)
-- Fail-safe direction (which command = open vs closed at zero coil current) and
-  the coil drive are TBD and depend on the chosen part + driver — see VERIFY list.
+- **Pilot-operated** at ~30 GPM: a two-stage (pilot + main spool) cartridge needs
+  a minimum supply pressure to pilot and adds a small amount of lag versus a
+  direct-acting valve. The sim's existing valve-lag model (50–200 ms) already
+  covers a plausible range; confirm the real part's response on the bench.
+- Fail-safe direction (which command = open vs closed at zero coil current) is
+  TBD and depends on the chosen part — see VERIFY list.
 
 ### VERIFY BEFORE PURCHASE
 
-- Exact part number (Sun FPCH-/Brand EFC-class or equivalent non-compensated
-  proportional pressure/throttle valve)
-- Rated flow capacity (GPM) — **after** the pump flow band is resolved
+- Exact part number (Sun FPFK-class / HydraForce / Bosch Rexroth, or equivalent
+  non-compensated electro-proportional throttle cartridge)
+- Rated capacity (confirm ~30 GPM, so the 8–19.4 GPM window is mid-range)
 - Pressure rating (confirm ≥ 3000 PSI)
-- Coil voltage / drive option (12 V PWM vs 0–10 V amp card) — decide the driver
+- **Pilot-operated vs direct-acting** (and any minimum pilot/supply pressure)
+- Coil voltage / drive option, and the matching amplifier card
+- Amplifier requirement (current-controlled, adjustable dither) — see Driver
 - Price (CAD)
 - Canadian availability / lead time
 
@@ -651,33 +670,33 @@ on.
 
 - The Pi/PLC writes VALVE_POSITION_CMD (holding register 40001, 0–10000 =
   0.00–100.00%). The register *number* does not change; its *physical meaning* is
-  now a restriction/back-pressure command into this valve (see
-  `plc/register_map.md`).
-- The driver scales the command to the valve's coil drive (PWM current or 0–10 V →
-  amp card → coil current). Restriction ∝ command → pump-outlet pressure ∝
-  (command, flow).
+  a restriction/back-pressure command into this valve (see `plc/register_map.md`).
+- The amplifier scales the command to the valve's coil current. Restriction ∝
+  command → pump-outlet pressure ∝ (command, flow).
 
-### Driver — coil drive TBD
+### Driver — coil drive TBD (amplifier recommended)
 
-The coil drive is **not chosen this session.** Two families:
-- **12 V PWM** directly from a current driver (e.g. DRV8871) — cheap, needs a
-  current-control loop or a valve that tolerates PWM.
-- **0–10 V command into a proportional amp card** — the card does the
-  current control; simplest if the build is reproduced/documented.
-
-Both are viable; pick after the valve part number (and its coil) is chosen.
+The coil drive is **not finalized this session.** RECOMMENDATION: a
+**current-controlled proportional amplifier card with adjustable dither
+(~100–250 Hz)**, carried as its own BOM line item, in preference to raw PWM from
+the Pi. A proportional cartridge of this size wants stable, dithered coil current
+for repeatable positioning; an amplifier delivers that and offloads the
+current-control loop from the Pi. Raw Pi PWM is possible but needs its own
+current-control and dither and is harder to make repeatable. Pick the amplifier
+to match the chosen valve's coil once the part number is set.
 
 ### Canadian sources
 
 - Sun Hydraulics distributors: Hydraquip, Applied Hydraulics (Ontario; also BC/AB)
-- Brand Hydraulics distributors / industrial hydraulic suppliers
-- Confirm the exact suffix codes (coil voltage, seal, flow variant) with the
+- HydraForce and Bosch Rexroth distributors / industrial hydraulic suppliers
+- Confirm the exact suffix codes (coil voltage, seal, flow/spool variant) with the
   distributor — these vary by manufacturer.
 
 ### Open items before ordering
 
-- Resolve the pump-flow / valve-flow-capacity inconsistency (above)
-- Choose the coil drive (12 V PWM vs 0–10 V amp card)
+- Choose the specific ~30 GPM proportional throttle cartridge (and confirm
+  pilot-operated vs direct-acting + any minimum pilot pressure)
+- Select the matching proportional amplifier card (current-controlled, dither)
 - Confirm fail-safe direction at zero command is acceptable for e-stop behavior
 - TODO: validate actual operating pressure on the first hardware run vs the sim
   model (target: ~1128 PSI working)
