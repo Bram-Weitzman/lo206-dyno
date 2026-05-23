@@ -44,6 +44,23 @@ DT_DEFAULT = 0.010                 # s, 10 ms physics step (matches server loop)
 # with flywheel.
 J_ENGINE = 0.05                    # kg.m^2 rotational inertia
 
+# --- Engine internal friction / overrun braking (coastdown) ---
+# Internal friction + pumping + compression braking that decelerates the engine
+# when it is NOT making combustion power (engine disabled, or -- once the throttle
+# register exists -- at idle throttle / overrun). It is a real, always-present
+# phenomenon, but the PUBLISHED WOT torque curve (torque_curve.py) is already the
+# NET, friction-subtracted, dyno-measured output, so this term is applied ONLY
+# off-power -- adding it again at WOT would double-count and shift the validated
+# WOT sweep. See tick() for the gating.
+#
+# Modelled as viscous (rises with RPM: friction/pumping/windage all grow with
+# speed) plus a small static term. Calibration target: an LO206 has a small
+# flywheel and coasts ~6000 -> ~2500 RPM in under ~2 s when unloaded off-throttle.
+# TODO: calibrate against the real engine (coastdown test: WOT to redline, chop
+# throttle, time the 6000->2500 decay).
+FRICTION_VISCOUS_FTLB_PER_RPM = 0.0016   # ft-lb of braking per RPM
+FRICTION_STATIC_FTLB          = 1.5      # ft-lb constant breakaway/seal drag
+
 # --- Hydraulic brake model (physically grounded from the spec'd hardware) ---
 # Re-derived 2026-05-22 from the locked brake hardware (docs/bom.md), replacing
 # the old linear PUMP_LOAD_GAIN placeholder (which was tuned to a 3.5:1 chain /
@@ -295,6 +312,12 @@ class DynoEngine:
         self._pressure_dev_psi = self._pump_brake_pressure_psi()
         return self._pressure_dev_psi * PSI_TO_ENGINE_FTLB
 
+    def _friction_torque(self) -> float:
+        """Engine internal friction + pumping/compression braking, ft-lb (>=0,
+        opposes rotation). Viscous (rises with RPM) + small static term. Applied
+        only off-power by tick() (see FRICTION_* constants for why)."""
+        return FRICTION_VISCOUS_FTLB_PER_RPM * self._rpm + FRICTION_STATIC_FTLB
+
     def tick(self, dt: float = None) -> None:
         """Advance the model by one time step ``dt`` (seconds)."""
         if dt is None:
@@ -327,7 +350,17 @@ class DynoEngine:
         # model. This also resolves the old below-engagement inconsistency where
         # pressure/CHT used raw (un-clutched) pump load while torque used the
         # clutched value: everything now uses the same self._pump_load.
-        net_torque_ftlbs = eng_tq - self._pump_load
+        #
+        # COASTDOWN FRICTION (2026-05-23): the engine's internal friction/pumping
+        # braking decelerates it whenever it is NOT making combustion power. The
+        # published curve is already net-of-friction, so we apply this term ONLY
+        # off-power to avoid double-counting -- which keeps the WOT path below
+        # byte-identical to the validated sweep. "Firing" here == engine enabled
+        # (Step 3 will additionally require the throttle wide-open). Without this
+        # term a disabled-but-spinning engine coasts forever (the run-43 bug).
+        firing = self._engine_enable
+        friction_tq = 0.0 if firing else self._friction_torque()
+        net_torque_ftlbs = eng_tq - self._pump_load - friction_tq
 
         # 3. Inertia integration: angular accel (rad/s^2) -> RPM.
         net_torque_nm = net_torque_ftlbs * FT_LB_TO_NM
