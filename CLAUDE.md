@@ -151,6 +151,16 @@ must be changed *first*, deliberately, before either side.
   the clutch from the physics loop entirely (see Current session state). With the
   clutch gone, torque, pressure and CHT all compute from the same (full) pump
   load — the old below-engagement inconsistency is gone.
+- **Dashboard run-state computed in 3 places (tech debt)**: "is a run
+  active" is derived independently by three views in `OperatorControls.tsx`
+  with three different definitions — top-right `LiveStatus` keys off
+  `sim_status` (engine running?), the operator bar keys off `openRun` (test_run
+  row open?), and `manualLocked` now keys off `runOpen && control_mode !== 0 &&
+  safety_enable === 1` (automated loop actively armed?). The last three
+  diagnostic sessions (blank tiles on a closed run, missing throttle path,
+  manual-panel stuck-locked after Stop) were all symptoms of these three
+  views disagreeing about "is a run active". Consolidating into one shared
+  derived run-state hook is **post-interview debt — do not refactor now**.
 
 ## Real-world calibration data
 
@@ -238,7 +248,56 @@ Git on the VM is configured as `Bram Weitzman <bram.weitzman@gmail.com>`.
 
 ## Current session state
 
-### Session 2026-05-23 (newest) -- Coastdown model + binary throttle; sweep RE-VERIFIED
+### Session 2026-05-23 (newest) -- Manual panel lock released when automated loop is safed off
+
+Fixed a UX defect that left the Manual/Diagnostics panel disabled after Stop
+even though the engine was no longer being driven by any automated loop.
+Browser-verified — VM-side curl could not see this, it is pure client state.
+
+**Symptom:** after clicking Start (PID) then Stop, the test_run row stays open
+(by design, for resume-via-Update-Target) and CONTROL_MODE stays at PID
+(Stop only writes SAFETY_ENABLE=0). The previous `manualLocked` expression
+treated (open row + PID mode) as "automated run active" and locked the
+throttle button + valve slider + Apply valve indefinitely, with the hint
+text "an automated (PID/sweep) run is active — stop it first." — even
+though the operator HAD stopped it. Operator either had to End Run (losing
+the open run) or hit E-Stop and reload.
+
+**Fix (commit `26ad22e`, `dashboard/components/OperatorControls.tsx`):**
+added a `safety_enable === 1` guard:
+
+```
+const manualLocked =
+  sweepActive ||
+  (runOpen && readback?.control_mode !== 0 && readback?.safety_enable === 1);
+```
+
+Now the lock keys off whether the automated loop is *armed*, not whether the
+row is merely open. After Stop the manual panel becomes usable on the
+still-open run, which is the intended way to probe brake/coastdown behavior
+without ending the run. The `set_valve` server-side guard (forces
+CONTROL_MODE=manual + SAFETY_ENABLE=1 before writing) still protects against
+a manual click landing while a real loop is running.
+
+**Did NOT change:** Stop semantics (still keeps the run open, still doesn't
+reset CONTROL_MODE — the resume-via-Update-Target contract is intact),
+End Run, PID gains, trips, sweep behavior, physics, the contract.
+
+**Browser-verified end-to-end:** Start (PID) → armed (SAFETY_ENABLE=1) → panel
+LOCKED ✓ · Stop → SAFETY_ENABLE=0, run #59 still open, engine coasting → panel
+ENABLED ✓ · clicked Accelerator (WOT) on the post-Stop run → THROTTLE coil at
+sim flipped True, RPM rose to 6034 (manual control reached the sim on a
+stopped-but-open run) ✓ · Start Sweep → run #60 armed → panel LOCKED again ✓ ·
+E-Stop + End Run → clean.
+
+**Logged as post-interview debt** (see Known open questions): three views in
+`OperatorControls.tsx` each derive "is a run active" independently with
+three different definitions; the last three diagnostic sessions were all
+symptoms of this. Consolidation deferred.
+
+---
+
+### Session 2026-05-23 -- Coastdown model + binary throttle; sweep RE-VERIFIED
 
 Fixed the run-43 freewheel-at-the-limiter failure and added engine throttle
 control. Root cause: the sim had no friction, so a disabled/unloaded engine
