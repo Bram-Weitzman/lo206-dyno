@@ -61,93 +61,147 @@ into `torque_curve.py` to model the .440 restriction.
 | Raspberry Pi 4 or 5 + SD card + PSU               | $120 - 180       |
 | Load cell 50 lbf compression + HX711 amplifier — confirmed | $35 - 65         |
 | Hall-effect RPM sensor (gear tooth) + bracket — confirmed | $15 - 35         |
-| Pressure transducer 0-1500 PSI, 4-20mA — confirmed | $35 - 75         |
+| Pressure transducer 0-3000 PSI, 4-20mA — confirmed (range revised, see below) | $35 - 75         |
 | K-type thermocouple + MAX31855 interface          | $25 - 40         |
 | ADS1115 ADC                                       | $15              |
-| Proportional valve + inline body — confirmed (see below) | $360 - 500       |
-| Valve driver — Option A custom / Option B Sun card — confirmed | $15 - 150        |
-| Hydraulic pump (1.52 cu.in. gear pump) — confirmed| $170             |
-| Back-pressure valve (return line) — confirmed     | $70              |
-| System relief valve — confirmed                   | $70              |
-| Chain drive (#219, 20T/70T, 3.5:1) — confirmed    | $25 - 90         |
+| Proportional pressure/throttle control valve + body — spec'd (see below) | $300 - 500 (TBD) |
+| Valve driver — coil drive TBD (12 V PWM vs 0-10 V amp card) | $15 - 150 (TBD)  |
+| Brake pump (2.14 cu in/rev gear pump, 3000 PSI) — spec'd (see below) | $TBD (verify)    |
+| Gear set (22T/64T kart gears, 2.909:1) + coupling/adapter — TBD-spec | $TBD             |
+| Hydraulic reservoir (heat-sized, see below) — TBD-spec | $TBD             |
+| System relief valve (set ~2000 PSI) — confirmed   | $70              |
+| Inlet / charge plumbing (flooded pump suction) — TBD-spec | $TBD             |
 | Hilliard Flame clutch — on hand (kart)            | $0               |
 | Torque arm mechanical assembly (axle stub, carriers, hub, arm) | $120 - 230       |
 | Wiring, enclosure, connectors, hydraulic fittings | $50 - 100        |
-| **Subtotal (without wideband O2)**                | **~$1,125 - 1,790**|
+| **Subtotal (without wideband O2) — ESTIMATE, several items unpriced** | **see "Budget" below** |
 | Wideband O2 + controller (Phase 2)                | +$150 - 250      |
 
 ### Cost driver
 
-The **proportional valve** is the largest single line item and dominates the
-build cost. **RESOLVED:** the valve is now confirmed — Sun Hydraulics RPGC-LBN
-(C10-2 cartridge). Full spec, driver options, Canadian sources, and confirmed
-pricing are in the **Proportional valve — CONFIRMED** section below
-(~$375–525 CAD with the Option A driver). This supersedes the earlier rough
-$150–400 estimate and the "source surplus/used first" guidance — buying new
-from a Sun distributor is now the plan. The valve-driver sub-decision (custom
-MCP4725 DAC vs Sun PRZE-LBN amp card) is detailed in that section.
+The **proportional valve** is still the largest single electronic line item. The
+valve **type** is now locked — a proportional **pressure/throttle control valve**
+(non-compensated cartridge; Sun Hydraulics FPCH-class or Brand Hydraulics
+EFC-class). The exact part number, rated flow, and price remain to be confirmed
+with a distributor; see the **Proportional pressure/throttle control valve —
+SPEC'D** section below. The coil drive (12 V PWM vs 0-10 V amp card) is
+deliberately left TBD.
 
-## Confirmed hydraulic circuit hardware
+### Budget (recompute, 2026-05-22)
 
-These items are locked from engineering analysis of the LO206's power output
-(8–10 ft-lbs torque, ~8.8 HP) against affordable gear-pump options.
+The brake-hardware re-spec replaced two previously-priced items (the 1.52 cu.in.
+Princess Auto pump and the Sun RPGC-LBN relief valve) with parts that are not yet
+priced from a source, and added several TBD-spec line items (gear set, reservoir,
+inlet/charge plumbing). **The subtotal is therefore an ESTIMATE, not a firm
+number.** Priced + on-hand items total roughly **$420–730 CAD** (Pi, load cell,
+RPM sensor, transducer, thermocouple, ADC, system relief, torque arm, wiring,
+clutch on-hand). The following are **unpriced** and must be quoted before the
+total is meaningful against the **sub-$1000 CAD** target:
 
-| Item              | Description                                     | Source                       | Price (CAD) |
-|-------------------|-------------------------------------------------|------------------------------|-------------|
-| Hydraulic pump    | 1.52 cu.in. aluminum-body gear pump             | Princess Auto Item 8375446   | $169.99     |
-| Back-pressure valve (return line) | Adjustable relief valve, 50-3,000 PSI, 10 GPM | Princess Auto Item 8688939 | $69.99 |
-| System relief valve | Adjustable relief valve, 50-3,000 PSI, 30 GPM | Princess Auto Item 8688947   | $69.99      |
-| #219 drive sprocket (20T) | 20-tooth #219 sprocket | On hand (kart spares) | $0 |
-| #219 driven sprocket (70T) | 70-tooth #219 sprocket | Kart supply / online | ~$25–40 CAD |
-| Custom hub (if required) | Driven sprocket to pump shaft adapter | Machine shop / DIY | ~$20–50 CAD |
-| #219 chain | Standard #219 kart chain | On hand (kart spares) | $0 |
+- Brake pump (2.14 cu in/rev, 3000 PSI gear pump — Dalton Hydraulic candidate)
+- Proportional pressure/throttle control valve + body (Sun FPCH / Brand EFC class)
+- Valve coil driver (12 V PWM circuit vs 0-10 V amp card — TBD)
+- Gear set (22T/64T) + shaft coupling/adapter
+- Hydraulic reservoir (heat-sized)
+- Inlet / charge plumbing for flooded pump suction
 
-### Hydraulic pump (Item 8375446) — notes
+A realistic guess for the unpriced block is **~$500–800 CAD**, which would put the
+build **at or slightly over the $1000 CAD target** — confirm the pump and valve
+quotes first, as they dominate the uncertainty.
 
-- Rated 400-3,000 RPM, 2,850 PSI max, 19.8 GPM
-- Driven via #219 chain, 3.5:1 reduction (engine 6,200 RPM → pump 1,771 RPM —
-  well within 3,000 RPM rating)
-- Sized to absorb full LO206 output (10 ft-lbs peak torque) at ~595 PSI
-  operating pressure (3.5:1 reduction multiplies torque at pump shaft to
-  ~35 ft-lbs)
+## Hydraulic circuit hardware (brake pump + drive)
 
-### Back-pressure valve (Item 8688939) — notes
+> **SUPERSEDES the earlier chain-drive / 1.52 cu.in. design.** The locked brake
+> design is a fixed-displacement **2.14 cu in/rev gear pump (3000 PSI rated)**
+> driven through a **22T/64T gear set (2.909:1 reduction)**, with a proportional
+> **pressure/throttle control valve** building back-pressure (see its own section
+> below). The previous Princess Auto 1.52 cu.in. pump, #219 chain 3.5:1 drive, and
+> Sun RPGC-LBN relief valve are no longer the plan. Downstream references that
+> still mention the #219 20T sprocket (e.g. the RPM-sensor trigger target) need
+> reconciling against the gear set — flagged, not yet rewritten here.
 
-- Installed in the return line, set to ~200 PSI
-- Creates a minimum pump load at all RPMs — eliminates the low-RPM floor
-  observed in pure-proportional simulation
-- Allows the proportional valve to modulate brake authority **above** this
-  baseline, rather than from zero
+These items size to the LO206's output (~8–11 ft-lbs torque, ~8.8 HP).
 
-### System relief valve (Item 8688947) — notes
+| Item                       | Description                                              | Source / candidate            | Price (CAD)     |
+|----------------------------|----------------------------------------------------------|-------------------------------|-----------------|
+| Brake pump                 | Fixed-displacement gear pump, ~2.14 cu in/rev, 3000 PSI  | Dalton Hydraulic (candidate)  | $TBD (verify)   |
+| Gear set (22T / 64T)       | 22T engine gear / 64T pump gear, 2.909:1 reduction       | Kart gears / supply           | $TBD            |
+| Shaft coupling / adapter   | Couples pump shaft to the 64T gear; tolerates misalignment | Machine shop / coupling supplier | $TBD          |
+| System relief valve        | Adjustable relief, set ~2000 PSI, ≥ pump flow            | Princess Auto Item 8688947 (or equiv.) | $69.99 |
+| Hydraulic reservoir        | Heat-sized tank + return; see heat note below            | Hydraulic supply / fabricated | $TBD            |
+| Inlet / charge plumbing    | Flooded or low-pressure-charged pump suction (anti-cavitation) | Hydraulic supply        | $TBD            |
 
-- High-pressure side, set to 1,500 PSI
-- Protects pump and circuit from overpressure spikes
-- Software `OVERPRESSURE_TRIP_PSI` fires at 900 PSI (applied in commit 0dd0a7a,
-  `simulator/modbus_map.py`) before this valve opens, so a fault latches in
-  software before mechanical relief is exercised
+### Brake pump (2.14 cu in/rev gear pump) — notes
 
-### #219 drive sprocket (20T) — notes
+- **Type:** fixed-displacement gear pump (a gear pump's displacement is constant
+  per rev; the *brake load* is set by the downstream proportional throttle valve,
+  not by the pump). Displacement ~**2.14 cu in/rev**, pressure rating **3000 PSI**.
+- **Drive:** 22T engine / 64T pump = **2.909:1 reduction**. Engine 2500 RPM →
+  pump 859 RPM; engine 6100 RPM → pump 2097 RPM (within a 3000-RPM-class pump's
+  range).
+- **Worked point (torque → pressure is speed-independent):** absorbing the
+  engine's ~11 ft-lb low-end torque needs ~**32 ft-lb (384 in-lb) at the pump
+  shaft** (× 2.909 through the gear set), which the 2.14 cu in/rev pump develops
+  at ~**1128 PSI** — only ~**38% of the 3000 PSI rating**. Pressure to hold a
+  given torque does not change with RPM; only flow does.
+- **Flow across the band (per Q = disp × pump_RPM / 231):** ~**8.0 GPM at 2500
+  engine RPM**, rising to ~**19.4 GPM at 6100**.
+  > ⚠ **FLOW INCONSISTENCY — resolve before sizing the valve & reservoir.** The
+  > project brief quotes the operating flow as **0.80–1.94 GPM**, ~10× lower than
+  > the 8–19 GPM that 2.14 cu in/rev actually produces at these pump speeds. The
+  > 2.14 cu in/rev displacement is load-bearing (it is what makes the 1128 PSI ↔
+  > 11 ft-lb worked point and the 3-tier pressure scheme self-consistent), so the
+  > **flow figures appear to be the error**, not the displacement. This matters:
+  > the valve flow-capacity selection (below) and the reservoir/cooling sizing
+  > both depend on real flow. **Confirm the pump's actual displacement and the
+  > resulting flow band with the distributor before buying the valve.**
+- **VERIFY BEFORE PURCHASE:**
+  - Exact displacement (cu in/rev) — confirm it is ~2.14, not a near value
+  - 3000 PSI pressure rating (continuous, not burst)
+  - Price (CAD)
+  - Shaft size / type (diameter, keyed vs splined) — drives the coupling spec
+  - Rotation (CW/CCW as viewed from shaft end) — must match the drive
+  - SAE mount pattern (SAE-A 2-bolt is typical for this size) — drives the
+    torque-arm reaction-mount bolt pattern
+  - Canadian availability / lead time (Dalton Hydraulic or equivalent)
 
-- Same sprocket used on kart — no new purchase required
-- Confirm bore fits Hilliard clutch drum or engine PTO shaft
+### Gear set (22T / 64T) + coupling — notes (TBD-spec)
 
-### #219 driven sprocket (70T) — notes
+- 64/22 = **2.909:1** reduction. The 22T is on the engine, the 64T on the pump.
+- Confirm the gears are compatible kart gears and that a hub/coupling bridges the
+  64T gear to the verified pump shaft size/type. The coupling should tolerate
+  minor angular/parallel misalignment to keep side load off the pump bearing.
+- This replaces the earlier #219 chain (3.5:1). Center distance, gear mesh
+  backlash, and guarding are build-time details.
 
-- 3.5:1 reduction (70/20) — matches kart gear ratio exactly
-- Check bore: if available in 3/4 in., custom hub may not be required
-- Otherwise: machine custom hub to suit 3/4 in. pump shaft (Item 8375446)
+### System relief valve — notes
 
-### Custom hub (if required) — notes
+- High-pressure side, **set ~2000 PSI** — the mechanical relief of the new
+  three-tier scheme (working ~1128 / **relief ~2000** / pump rating 3000).
+- Protects pump and circuit from overpressure spikes above the working band.
+- Must pass at least full pump flow at relief (see the flow note above — size to
+  the *real* flow band, not the brief's 0.8–1.9 GPM figures).
+- Software/PLC overpressure trips are **not changed this session** (sim
+  `OVERPRESSURE_TRIP_PSI` = 900, PLC `PSI_TRIP_PSI` = 750); they must be reviewed
+  next session against this ~2000 PSI relief scheme.
 
-- Required only if 70T sprocket bore does not match 3/4 in. pump shaft
-- Simple turned part: 3/4 in. bore, keyed, set screw
-- Good candidate for DIY on a lathe
+### Hydraulic reservoir — notes (TBD-spec)
 
-### #219 chain — notes
+- **Size for heat.** The dyno dumps the engine's full output as heat into the oil
+  continuously during a sweep: ~**3.9 HP (≈2.9 kW) at the brake-capacity floor**
+  up to ~**6.3 HP (≈4.7 kW) near redline** (HP = torque × RPM / 5252 on the
+  Stock-206 curve). A small reservoir will heat-soak quickly; size the tank (and
+  consider a cooler) so oil temperature stays in range across a full sweep.
+- Confirm fluid type/viscosity, filtration, and breather.
 
-- Same chain used on kart — no new purchase required
-- Cut to length at time of build based on pump-to-engine center distance
+### Inlet / charge plumbing — notes (TBD-spec)
+
+- The pump suction must be **flooded or low-pressure charged** to avoid
+  cavitation, *especially at the low-flow end* (~8 GPM at 2500 RPM, lower if the
+  flow inconsistency above resolves toward the brief's figures). Cavitation
+  damages gear pumps and corrupts the pressure (hence torque) reading.
+- Generously sized suction line, reservoir mounted at/above the pump inlet, and a
+  suction strainer rather than a restrictive filter on the inlet.
 
 ## Confirmed drivetrain hardware
 
@@ -267,8 +321,8 @@ With the HX711 at 24-bit resolution and 50 lbf capacity:
   set screw), jaw coupling hub face on the other end
 - If no lathe: have it machined — this is a simple turned part, <1 hr on
   a manual lathe, ~$50–80 at a local machine shop
-- Confirm pump shaft diameter is 3/4 in. (19.05mm) on Item 8375446
-  before finalizing hub dimensions
+- Confirm the spec'd 2.14 cu in/rev brake pump's shaft diameter/type
+  (see VERIFY list) before finalizing hub dimensions
 
 #### Flex coupling element — notes
 
@@ -289,9 +343,10 @@ With the HX711 at 24-bit resolution and 50 lbf capacity:
   This must be exactly 1.000 ft (304.8mm). Drill or mark this dimension
   before welding/bolting the contact button. Verify after assembly with
   a steel rule against the shaft centerline.
-- Arm attaches to pump body mounting flange bolts — confirm flange bolt
-  pattern on Item 8375446 before fabricating arm. Most gear pumps of this
-  size use a 2-bolt SAE A-mount (70mm bolt spacing) or 4-bolt metric pattern.
+- Arm attaches to pump body mounting flange bolts — confirm the spec'd brake
+  pump's flange/SAE mount pattern (see VERIFY list) before fabricating arm. Most
+  gear pumps of this size use a 2-bolt SAE A-mount (70mm bolt spacing) or 4-bolt
+  metric pattern.
 - Arm must be rigid in torsion (twisting around its long axis would change
   the contact geometry). Use square tube or add a gusset if using flat bar.
 
@@ -434,16 +489,16 @@ Confirm supply and output voltage before ordering.
 | Spec             | Value                                                           |
 |------------------|-----------------------------------------------------------------|
 | Type             | Piezoresistive, 2-wire loop-powered                            |
-| Range            | 0–1,500 PSI                                                    |
+| Range            | 0–3,000 PSI (revised for the 3-tier pressure scheme — see below) |
 | Output           | 4–20 mA current loop                                           |
 | Supply voltage   | 12–24 VDC (loop supply)                                        |
 | Connection       | 1/4 in. NPT male (confirm against pump outlet port thread)     |
 | Signal path      | 4–20 mA → 250 Ω burden resistor → 1–5 V → ADS1115 → I2C → Pi |
-| Modbus register  | 30003 HYDRAULIC_PSI (existing, no register map change)         |
-| Normal reading   | 500–700 PSI (clutch locked, full throttle)                     |
-| Software trip    | 900 PSI (OVERPRESSURE_TRIP_PSI, simulator/modbus_map.py)       |
-| Mechanical relief| 1,500 PSI (system relief valve, Item 8688947)                  |
-| Resolution       | 1,500 PSI ÷ ~24,000 usable ADS1115 counts ≈ 0.06 PSI/count    |
+| Modbus register  | 30003 HYDRAULIC_PSI (range doc'd 0–3000 in register_map.md)    |
+| Normal reading   | ~1128 PSI working (≈38% of pump rating), full braking near band low end |
+| Mechanical relief| ~2,000 PSI (system relief valve)                               |
+| Software trip    | 900 PSI sim / 750 PSI PLC — NOT changed this session; under review next session vs the ~2000 PSI relief |
+| Resolution       | 3,000 PSI ÷ ~24,000 usable ADS1115 counts ≈ 0.13 PSI/count    |
 | Est. cost (CAD)  | $30–60 (transducer) + $5 (burden resistor) = ~$35–65 total     |
 
 #### Why 4–20 mA over 0–5 V
@@ -466,14 +521,15 @@ Two interface options exist for pressure transducers in this price range:
 For a trailer-based dyno with a running kart engine, 4–20 mA is the correct
 professional choice. The added complexity is one 250 Ω resistor.
 
-#### Why 0–1,500 PSI (not 0–1,000 PSI)
+#### Why 0–3,000 PSI
 
-The system relief valve (Item 8688947) fires at 1,500 PSI. A 0–1,000 PSI
-transducer clips before the relief fires — the reading saturates at 1,000 PSI
-and the system has no visibility into pressure between 1,000 and 1,500 PSI.
-A 0–1,500 PSI transducer covers the full system range while still providing
-adequate resolution across the normal operating range (500–700 PSI):
-0.06 PSI/count with a 16-bit ADS1115.
+The three-tier pressure scheme is **working ~1128 PSI / mechanical relief ~2000
+PSI / pump rating 3000 PSI**. The transducer must read past the ~2000 PSI relief
+to see spikes before relief opens, and ideally up to the 3000 PSI pump rating.
+A 0–3,000 PSI transducer covers the full system range and puts the ~1128 PSI
+working point near mid-scale (good linearity region). Resolution is ~0.13
+PSI/count with a 16-bit ADS1115 — coarser than the old 0–1500 part but still far
+finer than the ~1 PSI the control loop needs.
 
 #### Signal conditioning — wiring
 
@@ -487,10 +543,10 @@ adequate resolution across the normal operating range (500–700 PSI):
                 ADS1115 GND ──── Loop supply (-)
 
   At 4 mA:  V = 0.004 × 250 = 1.000 V → 0 PSI
-  At 20 mA: V = 0.020 × 250 = 5.000 V → 1,500 PSI
+  At 20 mA: V = 0.020 × 250 = 5.000 V → 3,000 PSI
 
   ADS1115 PGA setting: ±6.144 V (covers full 1–5 V range).
-  PSI = (V_measured - 1.0) / 4.0 × 1500.0
+  PSI = (V_measured - 1.0) / 4.0 × 3000.0
 
   Wire-break detection: reading < 0.8 V (< ~3.2 mA) = sensor fault.
   This complements the SIM_STATUS fault register — on real hardware,
@@ -518,18 +574,18 @@ No conflict — both can share the Pi's I2C bus (GPIO 2/3, pins 3/5).
 
 #### Canadian sources
 
-- Generic 4–20 mA pressure transducers (0–1,500 PSI, 1/4 NPT):
-  Amazon.ca, AliExpress (search: "4-20mA pressure transducer 1500 PSI 1/4 NPT")
+- Generic 4–20 mA pressure transducers (0–3,000 PSI, 1/4 NPT):
+  Amazon.ca, AliExpress (search: "4-20mA pressure transducer 3000 PSI 1/4 NPT")
   Typical cost: $30–50 CAD
 - Omega PX309 series (higher quality, longer warranty):
-  ca.omega.com — PX309-1.5KI5V or similar; ~$80–120 CAD
+  ca.omega.com — PX309-3KI5V or similar; ~$80–120 CAD
 - 250 Ω precision resistor (0.1% tolerance recommended): Digi-Key Canada,
   Mouser Canada — ~$1–3 CAD
 
 #### Open items before ordering
 
-- Confirm pump outlet port thread is 1/4 in. NPT (verify against Princess
-  Auto Item 8375446 spec sheet before ordering transducer)
+- Confirm pump outlet port thread is 1/4 in. NPT (verify against the spec'd
+  2.14 cu in/rev brake pump's port spec before ordering transducer)
 - Confirm loop supply voltage available on the dyno (12 V or 24 V) — affects
   transducer selection (most 4–20 mA units accept 12–30 VDC, confirm range)
 - Confirm ADS1115 I2C address against other I2C devices on the bus before
@@ -537,106 +593,105 @@ No conflict — both can share the Pi's I2C bus (GPIO 2/3, pins 3/5).
 - TODO: on first hardware run, verify 4 mA live-zero reading with no pressure
   applied; calibrate PSI conversion against a known reference pressure
 
-## Proportional valve — CONFIRMED
+## Proportional pressure/throttle control valve — SPEC'D
 
-Sun Hydraulics (Helios Technologies) proportional pressure relief valve. A
-fixed-displacement gear pump with proportional backpressure control is the
-correct architecture for a hydraulic brake dyno: a pressure relief valve sets
-the pump outlet backpressure electronically — higher command = more engine
-braking load = lower RPM, which is exactly what the PID loop closes on.
+The brake valve is a proportional **pressure/throttle control valve**
+(non-compensated cartridge). It builds back-pressure by **restricting the pump
+outlet flow** — higher command = more restriction = higher pump-outlet pressure =
+more engine braking torque = lower RPM, which is exactly what the PID loop closes
+on.
+
+> **TERMINOLOGY — do not call this a "proportional flow-control valve."** A
+> proportional *flow-control* (pressure-**compensated**) valve holds a commanded
+> flow constant regardless of pressure — it would actively fight the brake and is
+> the **wrong** device here. What we want is a **non-compensated** proportional
+> pressure/throttle valve, which simply throttles the outlet so pressure rises
+> with flow and with closure. The two are easy to confuse by name; this is the
+> single most important spec to get right when ordering.
 
 | Spec              | Value                                                          |
 |-------------------|----------------------------------------------------------------|
-| Manufacturer      | Sun Hydraulics (Helios Technologies)                           |
-| Model             | RPGC-LBN (24 VDC coil); RPGC-LAN = 12 VDC variant              |
-| Type              | Proportional pressure relief, cartridge-style, normally closed |
-| Cavity            | C10-2                                                          |
-| Rated pressure    | 5,000 PSI max                                                  |
-| Operating range   | 500–700 PSI normal for this build                              |
-| Software trip     | 900 PSI (`OVERPRESSURE_TRIP_PSI` in `simulator/modbus_map.py`) |
-| Mechanical relief | 1,500 PSI (upstream relief valve, Item 8688947)                |
-| Rated flow        | 15 GPM (build needs ~10 GPM max at peak pump RPM)              |
-| Coil              | 24 VDC proportional solenoid (current-controlled)              |
+| Type              | Proportional pressure/throttle control, **non-compensated**, cartridge |
+| Candidate classes | Sun Hydraulics **FPCH**-class or Brand Hydraulics **EFC**-class |
+| Rated flow        | ~3–6 GPM rated (puts the operating band in the accurate lower-mid range, clear of the ~0.25 GPM low-accuracy floor) — **see flow caveat below** |
+| Pressure rating   | ≥ 3000 PSI (covers the full 3-tier scheme to pump rating)      |
+| Coil drive        | **TBD** — 12 V PWM vs 0–10 V amp card (NOT chosen this session) |
+| Operating pressure| ~1128 PSI working (38% of pump rating); develops up to ~2000 PSI before mechanical relief |
 
-### Why this valve — notes
+> ⚠ **FLOW CAVEAT (read with the pump's flow note).** The ~3–6 GPM rated-flow
+> target was chosen against the brief's **0.8–2.0 GPM** operating band. But
+> 2.14 cu in/rev at the spec'd pump speeds produces **~8–19 GPM** (Q = disp ×
+> pump_RPM / 231). If the real flow is 8–19 GPM, a 3–6 GPM valve is **undersized**
+> and would be the dominant restriction even wide open. **Resolve the
+> pump-displacement-vs-flow inconsistency (see Brake pump notes) before selecting
+> the valve's rated flow.** The valve *type* (non-compensated pressure/throttle)
+> is locked regardless; only its flow size depends on this.
 
-- **Normally closed** = at zero command (zero coil current) the valve is closed
-  and the circuit holds at maximum spring-set pressure. This is the correct
-  e-stop behavior: when the PLC drives SAFETY_ENABLE to 0, VALVE_POSITION_CMD
-  goes to 0 (zero current), the pump circuit pressurizes, and the engine is
-  braked to a stop. Fail-safe to maximum braking is the right safe-stop mode
-  for a brake dyno.
-- The PLC overspeed interlock (6,500 RPM trip) provides independent protection
-  in the event of runaway.
-- 15 GPM rated comfortably covers the ~10 GPM max pump output at peak RPM (1,743
-  pump RPM at 6,100 engine RPM through the 3.5:1 reduction with 1.52 cu.in.
-  displacement).
-- 5,000 PSI rating gives ~7× margin over normal operating pressure.
+### Why this valve type — notes
 
-### Required mounting hardware
+- A non-compensated proportional throttle modulates pump resistance by
+  restricting outlet flow: pressure rises with both flow (RPM) and closure
+  (command). That is the brake authority the PID modulates.
+- A pressure-**compensated** flow-control valve would instead hold flow constant
+  and resist the brake — wrong device. (This is the terminology trap above.)
+- Fail-safe direction (which command = open vs closed at zero coil current) and
+  the coil drive are TBD and depend on the chosen part + driver — see VERIFY list.
 
-- Sun C10-2 inline body, part **C102-2-B** — simplest option for a prototype
-  build. Est. $80–120 CAD.
-- Alternative: custom ported manifold block (if combining multiple functions).
+### VERIFY BEFORE PURCHASE
 
-### Driver options — choose one before ordering
+- Exact part number (Sun FPCH-/Brand EFC-class or equivalent non-compensated
+  proportional pressure/throttle valve)
+- Rated flow capacity (GPM) — **after** the pump flow band is resolved
+- Pressure rating (confirm ≥ 3000 PSI)
+- Coil voltage / drive option (12 V PWM vs 0–10 V amp card) — decide the driver
+- Price (CAD)
+- Canadian availability / lead time
 
-**Option A — custom driver circuit (recommended for first build):**
-- MCP4725 I2C DAC on the Pi (12-bit, 0–3.3 V, ~$5 CAD) → rail-to-rail op-amp
-  scaler (3.3 V → 10 V) → DRV8871 or L298N coil current driver (~$5–10 CAD)
-- Pi interface: I2C on pins 3 + 5 (GPIO 2/3), no additional HAT needed
-- Total driver cost: ~$15–25 CAD in components
+### Modbus interface — no register-numbering change
 
-**Option B — Sun PRZE-LBN proportional amplifier card:**
-- Accepts 0–10 V command, outputs calibrated proportional coil current; no
-  custom circuit needed
-- Recommended if the build will be reproduced or documented for others
-- Est. $120–150 CAD from a Sun distributor
+- The Pi/PLC writes VALVE_POSITION_CMD (holding register 40001, 0–10000 =
+  0.00–100.00%). The register *number* does not change; its *physical meaning* is
+  now a restriction/back-pressure command into this valve (see
+  `plc/register_map.md`).
+- The driver scales the command to the valve's coil drive (PWM current or 0–10 V →
+  amp card → coil current). Restriction ∝ command → pump-outlet pressure ∝
+  (command, flow).
 
-### Modbus interface — no register map changes needed
+### Driver — coil drive TBD
 
-- Pi writes VALVE_POSITION_CMD (holding register 40001, 0–10000 = 0.00–100.00%)
-- Driver circuit scales the command to 0–10 V (or directly via the MCP4725 DAC output)
-- Coil current proportional to command → relief pressure proportional to command
+The coil drive is **not chosen this session.** Two families:
+- **12 V PWM** directly from a current driver (e.g. DRV8871) — cheap, needs a
+  current-control loop or a valve that tolerates PWM.
+- **0–10 V command into a proportional amp card** — the card does the
+  current control; simplest if the build is reproduced/documented.
 
-### Estimated cost (CAD, new)
-
-| Item                       | Price (CAD)      |
-|----------------------------|------------------|
-| Valve cartridge (RPGC-LBN) | $280 – 380       |
-| Inline body (C102-2-B)     | $80 – 120        |
-| Driver — Option A          | $15 – 25         |
-| Driver — Option B          | $120 – 150       |
-| **Total, Option A driver** | **~$375 – 525**  |
-| **Total, Option B driver** | **~$480 – 650**  |
-
-Budget remaining of the $1,000 CAD target after the valve system:
-- Option A driver: ~$475–625 CAD remaining for all other BOM items
-- Option B driver: ~$350–520 CAD remaining
+Both are viable; pick after the valve part number (and its coil) is chosen.
 
 ### Canadian sources
 
-- Hydraquip (distributor — Ontario, BC, AB locations)
-- Applied Hydraulics (Ontario)
-- Sun Hydraulics direct: sunhydraulics.com (ships to Canada)
-
-NOTE: Confirm the exact part number with the distributor before ordering. Sun
-uses suffix codes for coil voltage, seal material, and flow variants. Confirm:
-RPGC-LBN = 24 VDC, RPGC-LAN = 12 VDC.
+- Sun Hydraulics distributors: Hydraquip, Applied Hydraulics (Ontario; also BC/AB)
+- Brand Hydraulics distributors / industrial hydraulic suppliers
+- Confirm the exact suffix codes (coil voltage, seal, flow variant) with the
+  distributor — these vary by manufacturer.
 
 ### Open items before ordering
 
-- Confirm the C102-2-B body is in stock at the chosen distributor
-- Confirm coil voltage (LBN = 24 V vs LAN = 12 V) matches the driver circuit
-- Confirm bore size / port thread spec on the C102-2-B body
-- TODO: validate actual operating pressure on the first hardware run and compare
-  to the simulator model (target: 595 PSI at peak torque, 900 PSI software trip)
+- Resolve the pump-flow / valve-flow-capacity inconsistency (above)
+- Choose the coil drive (12 V PWM vs 0–10 V amp card)
+- Confirm fail-safe direction at zero command is acceptable for e-stop behavior
+- TODO: validate actual operating pressure on the first hardware run vs the sim
+  model (target: ~1128 PSI working)
 
-## System pressure specs
+## System pressure specs (three-tier)
 
-- **Normal operating range:** 500 - 700 PSI
-- **Back-pressure baseline:** ~200 PSI (set by return-line relief valve, Item 8688939)
-- **System relief (mechanical):** 1,500 PSI (Item 8688947)
-- **Software overpressure trip:** 900 PSI (applied in commit 0dd0a7a,
-  `simulator/modbus_map.py`) — fires before mechanical relief opens
-- **Basis:** 3.5:1 chain reduction, 1.52 cu.in. pump, ~595 PSI at peak engine torque
+- **Working pressure:** ~**1128 PSI** — develops the pump-shaft torque (×2.909
+  gear ratio) to absorb the engine's ~11 ft-lb low-end torque; ~38% of pump rating.
+- **System relief (mechanical):** ~**2000 PSI** — relief valve protects the
+  circuit above the working band.
+- **Pump rating:** **3000 PSI** — the 2.14 cu in/rev gear pump's rated pressure.
+- **Software/PLC overpressure trips:** sim `OVERPRESSURE_TRIP_PSI` = 900,
+  PLC `PSI_TRIP_PSI` = 750 — **NOT changed this session.** Both sit *below* the
+  ~1128 PSI working point and must be reviewed next session against this scheme
+  (alongside the PID retune); until then the sim faults at full braking.
+- **Basis:** 2.909:1 gear reduction, 2.14 cu in/rev pump, torque→pressure
+  speed-independent (P = engine_torque × 2.909 × 12 / (disp / 2π)).
