@@ -280,6 +280,20 @@ and the brake-grab overpressure-trips -- restart the sim (or otherwise return to
 idle) before each verification sweep. Start RPM ~4000 (below ~3800 the valve
 saturates / the grab can trip).
 
+**WHAT REMAINS (the sim control system is now fully validated end-to-end):**
+- **Real-hardware calibration.** Every gain/constant is sim-tuned. On the real
+  rig the valve gain, pump displacement, inertia (J_ENGINE), valve lag, and the
+  pressure trips must be re-calibrated against measured behavior. The PID gains
+  (0.02/0.02/0) are a starting point, not final.
+- **Coil drive still TBD** (12 V PWM vs proportional amplifier card — amplifier
+  recommended; not finalized).
+- **Hardware procurement** of the re-spec'd circuit (30 GPM throttle valve +
+  amplifier, 2.14 cu in/rev pump, gear set, ≥20 GPM relief, multi-gal reservoir +
+  likely oil cooler) — and the budget is now likely over the $1000 CAD target.
+- Optional: re-run the sweep at a longer dwell with a lower start if a cleaner
+  near-floor data point is wanted for the doc.
+This session closed the control-loop validation; nothing further is BLOCKED.
+
 ---
 
 ### Session 2026-05-23 -- Pump flow corrected (10x) + valve/circuit re-spec'd
@@ -324,6 +338,8 @@ plant, review of `PSI_TRIP_PSI` (750) + `OVERPRESSURE_TRIP_PSI` (900) against th
 ~2000 PSI relief, and the full verification sweep + HP-rise re-confirm (remote
 browser, not curl) all remain outstanding. This session changed circuit *sizing*,
 not the control loop or the plant physics.
+> [SUPERSEDED 2026-05-23 — all three are now DONE; trips raised to 1700, PID
+> retuned to 0.02/0.02/0, and sweep verified (run 38). See the newest entry above.]
 
 ---
 
@@ -387,6 +403,9 @@ Revisiting the default belongs with next session's retune, once a clean hold is
 possible. `register_map.md` + dashboard left as-is.
 
 **>>> NEXT SESSION (blocked on a deliberate control/safety change) <<<**
+> [DONE 2026-05-23 — all three items below were completed: trips raised to 1700
+> PSI, PID retuned to 0.02/0.02/0, and the verification sweep passed (run 38,
+> CSV in docs/verification/). See the newest "Current session state" entry.]
 The brake model changed, so before any client-doc HP figure is taken:
 1. **Retune the PID** for the new (much stronger) plant.
 2. **Review the pressure trips** against the three-tier scheme: sim
