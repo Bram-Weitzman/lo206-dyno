@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
+import type { RunState } from "@/hooks/useRunState";
 
 // Operator command panel — the dashboard's WRITE surface.
 //
@@ -9,13 +10,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 //   Start Sweep -> POST /api/runs THEN /api/command start_sweep (writes the four
 //                  sweep params + CONTROL_MODE=SWEEP + SAFETY_ENABLE=1). The PLC
 //                  steps the setpoint and drops SAFETY_ENABLE itself at the end;
-//                  this panel polls SWEEP_STATE and auto-closes the run on 2.
+//                  the hook polls SWEEP_STATE and auto-closes the run on 2.
 //   End Run     -> PATCH /api/run/[id] (stamp ended_at). Does NOT stop the engine.
 //   Stop        -> /api/command stop  (SAFETY_ENABLE=0). Does NOT close the run.
 //   E-stop      -> /api/command estop (SAFETY_ENABLE=0), immediate, no confirm.
 //
-// All Modbus I/O goes through /api/command (OpenPLC :502); this component never
-// talks Modbus directly.
+// All run-state (openRun, readback, phase, lockReason) and all Modbus I/O come
+// from the single useRunState() hook instance, passed in as `run`. This panel
+// owns NO run-state polling of its own — it only holds form-input + UI-feedback
+// state (target/sweep params, busy/status/error). See hooks/useRunState.ts.
 
 interface RunRow {
   id: number;
@@ -37,8 +40,6 @@ interface CommandReadback {
   throttle: number; // 0 idle / 1 wide-open (THROTTLE coil)
 }
 
-const RUN_POLL_MS = 1500;
-const SWEEP_POLL_MS = 1000;
 const MODE_LABELS = ["Manual", "PID", "Sweep"];
 const SWEEP_STATE_LABELS = ["idle", "running", "complete"];
 
@@ -57,11 +58,12 @@ function clampInt(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, Math.round(v)));
 }
 
-export default function OperatorControls() {
-  const [openRun, setOpenRun] = useState<RunRow | null>(null);
+export default function OperatorControls({ run }: { run: RunState }) {
+  const { openRun, readback, phase, postCommand, openNewRun, endRun,
+    refreshOpenRun, setSweepActive } = run;
+
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const [readback, setReadback] = useState<CommandReadback | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // PID hold target.
@@ -72,114 +74,20 @@ export default function OperatorControls() {
   const [sweepEnd, setSweepEnd] = useState(6100);
   const [sweepStep, setSweepStep] = useState(400);
   const [sweepDwell, setSweepDwell] = useState(2000);
-  // True only while WE are running a sweep — guards auto-close so a stale
-  // SWEEP_STATE=2 from a previous sweep cannot close an unrelated run.
-  const [sweepActive, setSweepActive] = useState(false);
 
   // Manual diagnostics: brake-valve override slider value (%).
   const [manualValve, setManualValve] = useState(0);
-
-  const alive = useRef(true);
-
-  const refreshOpenRun = useCallback(async (): Promise<RunRow | null> => {
-    try {
-      const res = await fetch("/api/runs", { cache: "no-store" });
-      const rows: RunRow[] = await res.json();
-      const open = rows.find((r) => r.ended_at === null) ?? null;
-      if (alive.current) setOpenRun(open);
-      return open;
-    } catch {
-      return null; // keep last-known state; the DB may be momentarily busy
-    }
-  }, []);
-
-  useEffect(() => {
-    alive.current = true;
-    refreshOpenRun();
-    const id = setInterval(refreshOpenRun, RUN_POLL_MS);
-    return () => {
-      alive.current = false;
-      clearInterval(id);
-    };
-  }, [refreshOpenRun]);
-
-  // While ANY run is open, poll /api/command to keep readback fresh. This is
-  // what tells the UI whether the open run is PID (control_mode=1) or sweep
-  // (=2) — needed so that on a page reload mid-run the Update Target button
-  // is correctly hidden during a sweep run. While a sweep we started is
-  // active, also auto-close the run when SWEEP_STATE hits 2.
-  useEffect(() => {
-    if (!openRun) return;
-    let live = true;
-    const poll = async () => {
-      try {
-        const res = await fetch("/api/command", { cache: "no-store" });
-        const data = await res.json();
-        if (!live || !data.ok) return;
-        const rb = data.readback as CommandReadback;
-        setReadback(rb);
-        if (sweepActive && rb.sweep_state === 2) {
-          // Sweep finished: the PLC already dropped SAFETY_ENABLE. Close the run
-          // so a sweep is one self-contained action. sweepActive guards against
-          // a stale SWEEP_STATE=2 from a previous sweep closing an unrelated run.
-          const open = await refreshOpenRun();
-          if (open) {
-            await fetch(`/api/run/${open.id}`, { method: "PATCH" });
-            await refreshOpenRun();
-            setStatus(`Sweep complete · run #${open.id} auto-closed`);
-          } else {
-            setStatus("Sweep complete");
-          }
-          setSweepActive(false);
-        }
-      } catch {
-        /* transient; keep polling */
-      }
-    };
-    poll();
-    const id = setInterval(poll, SWEEP_POLL_MS);
-    return () => {
-      live = false;
-      clearInterval(id);
-    };
-  }, [openRun, sweepActive, refreshOpenRun]);
-
-  const postCommand = useCallback(
-    async (bodyObj: Record<string, unknown>): Promise<CommandReadback> => {
-      const res = await fetch("/api/command", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bodyObj),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error ?? `command "${bodyObj.action}" failed`);
-      }
-      setReadback(data.readback as CommandReadback);
-      return data.readback as CommandReadback;
-    },
-    [],
-  );
-
-  const openNewRun = useCallback(async (notes: string): Promise<RunRow> => {
-    const res = await fetch("/api/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ notes }),
-    });
-    return (await res.json()) as RunRow;
-  }, []);
 
   const onStart = useCallback(async () => {
     setBusy(true);
     setError(null);
     try {
       const target = clampInt(pidTarget, LIMITS.pid.lo, LIMITS.pid.hi);
-      const run = await openNewRun(`dashboard PID hold ${target} RPM`);
+      const run0 = await openNewRun(`dashboard PID hold ${target} RPM`);
       // Send the operator's target so the loop holds the chosen RPM, not a stale
       // register value.
       const rb = await postCommand({ action: "start", target });
-      setStatus(`Run #${run.id} opened · PID holding ${rb.target_rpm} RPM`);
+      setStatus(`Run #${run0.id} opened · PID holding ${rb.target_rpm} RPM`);
       await refreshOpenRun();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -214,13 +122,13 @@ export default function OperatorControls() {
       const end = Math.max(start, clampInt(sweepEnd, LIMITS.end.lo, LIMITS.end.hi));
       const step = clampInt(sweepStep, LIMITS.step.lo, LIMITS.step.hi);
       const dwell = clampInt(sweepDwell, LIMITS.dwell.lo, LIMITS.dwell.hi);
-      const run = await openNewRun(
+      const run0 = await openNewRun(
         `dashboard sweep ${start}-${end} RPM, step ${step}, dwell ${dwell}ms`,
       );
       const rb = await postCommand({ action: "start_sweep", start, end, step, dwell });
       setSweepActive(true);
       setStatus(
-        `Sweep started · run #${run.id} · ${rb.sweep_start}→${rb.sweep_end} RPM, step ${rb.sweep_step}, dwell ${rb.sweep_dwell}ms`,
+        `Sweep started · run #${run0.id} · ${rb.sweep_start}→${rb.sweep_end} RPM, step ${rb.sweep_step}, dwell ${rb.sweep_dwell}ms`,
       );
       await refreshOpenRun();
     } catch (e) {
@@ -228,25 +136,22 @@ export default function OperatorControls() {
     } finally {
       setBusy(false);
     }
-  }, [sweepStart, sweepEnd, sweepStep, sweepDwell, openNewRun, postCommand, refreshOpenRun]);
+  }, [sweepStart, sweepEnd, sweepStep, sweepDwell, openNewRun, postCommand, refreshOpenRun, setSweepActive]);
 
   const onEndRun = useCallback(async () => {
-    if (!openRun) return;
+    const open = openRun;
+    if (!open) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/run/${openRun.id}`, { method: "PATCH" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "end run failed");
-      setSweepActive(false);
-      setStatus(`Run #${openRun.id} ended at ${data.ended_at}`);
-      await refreshOpenRun();
+      const ended = await endRun();
+      setStatus(`Run #${open.id} ended at ${ended?.ended_at ?? "?"}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }, [openRun, refreshOpenRun]);
+  }, [openRun, endRun]);
 
   const onStop = useCallback(async () => {
     setBusy(true);
@@ -260,7 +165,7 @@ export default function OperatorControls() {
     } finally {
       setBusy(false);
     }
-  }, [postCommand]);
+  }, [postCommand, setSweepActive]);
 
   // No confirm dialog — immediate. Not gated on `busy` so it always fires. On the
   // real rig this sits beside a physically wired E-stop; this software button is
@@ -274,7 +179,7 @@ export default function OperatorControls() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, [postCommand]);
+  }, [postCommand, setSweepActive]);
 
   // Manual throttle (accelerator / lift-off): toggle the THROTTLE coil. Writes
   // ONLY the coil. During a PID/sweep run the PLC forces WOT, so this is only
@@ -314,23 +219,21 @@ export default function OperatorControls() {
   );
 
   const runOpen = openRun !== null;
-  const pidHolding =
-    !sweepActive &&
-    readback?.control_mode === 1 &&
-    readback?.safety_enable === 1;
-  // "PID run open" = a run is open AND it's in PID mode (not sweep). Gates the
-  // mid-run Update Target affordance. We use BOTH sweepActive (in-session
-  // signal — true while WE are running a sweep) AND readback.control_mode (the
-  // authoritative PLC state, populated by the open-run poll above). Requiring
-  // control_mode === 1 means cross-reload during a sweep run the button stays
-  // hidden, and avoids briefly showing it before the first poll lands.
-  const pidRunOpen = runOpen && !sweepActive && readback?.control_mode === 1;
+  // Run-state booleans derive from the hook's normalized `phase`, never from
+  // raw readback fields — so a poll freeze or transient backend error cannot
+  // leave them stuck (the bug class this consolidation kills).
+  const pidHolding = phase === "pid-armed";
+  // "PID run open" gates the mid-run Update Target affordance: a PID run is
+  // open whether the loop is currently armed or stopped (mode stays PID until
+  // a different mode is commanded).
+  const pidRunOpen = phase === "pid-armed" || phase === "pid-stopped-open";
+  const inSweep = phase === "sweep-armed" || phase === "sweep-complete-open";
 
-  // Manual throttle + valve are locked out while an automated run (PID or sweep)
-  // is active, so the manual controls cannot fight the closed loop. (set_valve
-  // also forces CONTROL_MODE=manual server-side, a second guard.)
+  // Manual throttle + valve are locked out while an automated loop (PID or
+  // sweep) is armed, so the manual controls cannot fight the closed loop.
+  // (set_valve also forces CONTROL_MODE=manual server-side, a second guard.)
   const manualLocked =
-    sweepActive ||
+    run.sweepActive ||
     (runOpen && readback?.control_mode !== 0 && readback?.safety_enable === 1);
 
   return (
@@ -458,7 +361,7 @@ export default function OperatorControls() {
           <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">
             Stepped sweep (auto torque curve)
           </h3>
-          {sweepActive && readback && (
+          {inSweep && readback && (
             <span className="font-mono text-xs text-sky-400">
               sweep {SWEEP_STATE_LABELS[readback.sweep_state] ?? readback.sweep_state}
               {readback.sweep_state === 1 ? ` · target ${readback.target_rpm} RPM` : ""}
