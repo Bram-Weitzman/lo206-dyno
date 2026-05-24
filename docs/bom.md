@@ -190,9 +190,11 @@ These items size to the LO206's output (~8–11 ft-lbs torque, ~8.8 HP).
 - **Rated ≥ 20 GPM** so it can pass full pump flow (peak ~19.4 GPM at 6100 RPM)
   at relief without choking — sized to the verified 8–19.4 GPM window. The earlier
   Princess Auto unit was kept only as a stand-in; a ≥20 GPM relief is TBD-spec.
-- Software/PLC overpressure trips are **not changed this session** (sim
-  `OVERPRESSURE_TRIP_PSI` = 900, PLC `PSI_TRIP_PSI` = 750); they must be reviewed
-  next session against this ~2000 PSI relief scheme.
+- Software/PLC overpressure trips were **raised 900/750 → 1700 PSI (2026-05-23)**
+  (sim `OVERPRESSURE_TRIP_PSI` = 1700, PLC `PSI_TRIP_PSI` = 1700 — they agree) so
+  the ordering is working ~1128 < trip 1700 < relief ~2000 < rating 3000: the trip
+  rides ~50% above the steady working point to tolerate PID transients and fires
+  before this ~2000 PSI mechanical relief.
 
 ### Hydraulic reservoir — notes (TBD-spec)
 
@@ -513,7 +515,7 @@ Confirm supply and output voltage before ordering.
 | Modbus register  | 30003 HYDRAULIC_PSI (range doc'd 0–3000 in register_map.md)    |
 | Normal reading   | ~1128 PSI working (≈38% of pump rating), full braking near band low end |
 | Mechanical relief| ~2,000 PSI (system relief valve)                               |
-| Software trip    | 900 PSI sim / 750 PSI PLC — NOT changed this session; under review next session vs the ~2000 PSI relief |
+| Software trip    | 1700 PSI sim / 1700 PSI PLC (raised 900/750 → 1700, 2026-05-23) — ~50% above the ~1128 PSI working point, fires before the ~2000 PSI relief |
 | Resolution       | 3,000 PSI ÷ ~24,000 usable ADS1115 counts ≈ 0.13 PSI/count    |
 | Est. cost (CAD)  | $30–60 (transducer) + $5 (burden resistor) = ~$35–65 total     |
 
@@ -708,9 +710,10 @@ to match the chosen valve's coil once the part number is set.
 - **System relief (mechanical):** ~**2000 PSI** — relief valve protects the
   circuit above the working band.
 - **Pump rating:** **3000 PSI** — the 2.14 cu in/rev gear pump's rated pressure.
-- **Software/PLC overpressure trips:** sim `OVERPRESSURE_TRIP_PSI` = 900,
-  PLC `PSI_TRIP_PSI` = 750 — **NOT changed this session.** Both sit *below* the
-  ~1128 PSI working point and must be reviewed next session against this scheme
-  (alongside the PID retune); until then the sim faults at full braking.
+- **Software/PLC overpressure trips:** sim `OVERPRESSURE_TRIP_PSI` = 1700,
+  PLC `PSI_TRIP_PSI` = 1700 — **raised 900/750 → 1700 PSI (2026-05-23)** so they
+  agree and sit *above* the ~1128 PSI working point: working ~1128 < trip 1700 <
+  relief ~2000 < rating 3000. The trip rides ~50% above the steady working point
+  to tolerate PID transients and fires before the ~2000 PSI mechanical relief.
 - **Basis:** 2.909:1 gear reduction, 2.14 cu in/rev pump, torque→pressure
   speed-independent (P = engine_torque × 2.909 × 12 / (disp / 2π)).
